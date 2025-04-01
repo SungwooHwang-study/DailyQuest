@@ -206,6 +206,45 @@ async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(msg)
 
+async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    users.add_user(user_id)
+    today = datetime.date.today()
+
+    keyboard = []
+
+    for game, data in QUESTS.items():
+        events = data.get("events", [])
+        for evt in events:
+            evt_name = evt["name"]
+            evt_type = evt["type"]
+            until = datetime.date.fromisoformat(evt["until"])
+            if today > until:
+                continue  # 이벤트 종료됨
+
+            date_key = today.strftime("%Y-%m-%d") if evt_type == "daily" else evt["until"]
+            keyboard.append([InlineKeyboardButton(f"🎉 {game} - {evt_name}", callback_data="noop")])
+
+            row = []
+            for task in evt["tasks"]:
+                checked = storage.is_event_checked(user_id, game, evt_name, task, date_key)
+                mark = "✅" if checked else "☐"
+                callback_data = f"event|{game}|{evt_name}|{task}|{date_key}"
+                row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
+
+                if len(row) == 2:
+                    keyboard.append(row)
+                    row = []
+            if row:
+                keyboard.append(row)
+
+    if not keyboard:
+        await update.message.reply_text("📭 현재 진행 중인 이벤트가 없습니다.")
+        return
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("📅 진행 중인 이벤트 목록입니다!", reply_markup=reply_markup)
+
 def main():
     load_quests()
 

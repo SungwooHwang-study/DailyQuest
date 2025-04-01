@@ -52,3 +52,32 @@ def complete_all(user_id: int, game: str, tasks: list[str], period: str = "daily
                 "game": game,
                 "task": task
             })
+
+def is_event_checked(user_id: int, game: str, event: str, task: str, date: str):
+    result = db.search((User.user_id == user_id) &
+                       (User.period == "event") &
+                       (User.date == date) &
+                       (User.game == game) &
+                       (User.event == event) &
+                       (User.task == task))
+    return bool(result)
+
+def toggle_event_check(user_id: int, game: str, event: str, task: str, date: str):
+    if is_event_checked(user_id, game, event, task, date):
+        db.remove((User.user_id == user_id) &
+                  (User.period == "event") &
+                  (User.date == date) &
+                  (User.game == game) &
+                  (User.event == event) &
+                  (User.task == task))
+    else:
+        db.insert({
+            "user_id": user_id,
+            "period": "event",
+            "date": date,
+            "game": game,
+            "event": event,
+            "task": task
+        })
+
+        
