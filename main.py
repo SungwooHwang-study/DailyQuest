@@ -3,9 +3,9 @@ import os
 import json
 import datetime
 import asyncio
+import threading
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
 from utils import users, storage  
 
@@ -335,11 +335,15 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+def start_loop(loop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
 
 def main():
     load_quests()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # 핸들러 등록
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily))
     app.add_handler(CommandHandler("weekly", weekly))
@@ -349,15 +353,21 @@ def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(conv_handler)
 
+    # 전용 이벤트 루프 생성 후 별도 스레드에서 실행
     loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
+    t.start()
+
+    # BackgroundScheduler 사용: 백그라운드 스케줄러는 자체 스레드에서 실행됩니다.
     scheduler = BackgroundScheduler()
-    scheduler.add_job(lambda: asyncio.run_coroutine_threadsafe(send_daily_to_all_users(app), loop), 
-                      trigger="cron", hour=8, minute=0)
+    scheduler.add_job(
+        lambda: asyncio.run_coroutine_threadsafe(send_daily_to_all_users(app), loop),
+        trigger="cron", hour=8, minute=0
+    )
     scheduler.start()
 
     print("Bot is running with scheduler...")
-    app.run_polling() 
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
