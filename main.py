@@ -1,7 +1,8 @@
-# main.py (수정됨)
+# main.py
 import os
 import json
 import datetime
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -333,12 +334,10 @@ conv_handler = ConversationHandler(
 )
 
 
-def main():
+async def main():
     load_quests()
-
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # 핸들러 등록
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("daily", daily))
     app.add_handler(CommandHandler("weekly", weekly))
@@ -348,14 +347,14 @@ def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(conv_handler)
 
-
-    # 스케줄러 설정
+    # 스케줄러는 asyncio에서만 실행 가능!
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_daily_to_all_users, trigger="cron", hour=8, minute=0, args=[app])
     scheduler.start()
 
     print("Bot is running with scheduler...")
-    app.run_polling()
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
