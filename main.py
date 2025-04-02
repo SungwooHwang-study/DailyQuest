@@ -17,6 +17,7 @@ def load_quests():
         QUESTS = json.load(f)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("봇 살아있음!")
     user_id = update.effective_user.id
     users.add_user(user_id)
     game_list = "\n".join(f"- {game}" for game in QUESTS.keys())
@@ -334,7 +335,7 @@ conv_handler = ConversationHandler(
 )
 
 
-async def main():
+def main():
     load_quests()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
@@ -347,21 +348,12 @@ async def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(conv_handler)
 
-    # 이벤트 루프 명시
-    loop = asyncio.get_running_loop()
-
-    # AsyncScheduler에 현재 loop 명시적으로 전달
-    scheduler = AsyncIOScheduler(event_loop=loop)
+    scheduler = AsyncIOScheduler()
     scheduler.add_job(send_daily_to_all_users, trigger="cron", hour=8, minute=0, args=[app])
     scheduler.start()
 
     print("Bot is running with scheduler...")
-
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling()
-    await app.updater.wait_until_closed()
-    await app.stop()
-
+    app.run_polling()
+    
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
