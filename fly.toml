@@ -2,7 +2,7 @@ app = "your-app-name"
 primary_region = "nrt"
 
 [build]
-  image = "python:3.11-slim"
+  dockerfile = "Dockerfile"
 
 [env]
   PYTHONUNBUFFERED = "true"
