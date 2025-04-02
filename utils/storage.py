@@ -32,6 +32,24 @@ def toggle_check(user_id: int, game: str, task: str, period: str = "daily"):
     else:
         add_check(user_id, game, task, period)
 
+def add_check(user_id: int, game: str, task: str, period: str = "daily"):
+    key = get_today() if period == "daily" else get_week_key()
+    db.insert({
+        "user_id": user_id,
+        "period": period,
+        "date": key,
+        "game": game,
+        "task": task
+    })
+
+def remove_check(user_id: int, game: str, task: str, period: str = "daily"):
+    key = get_today() if period == "daily" else get_week_key()
+    db.remove((User.user_id == user_id) &
+              (User.period == period) &
+              (User.date == key) &
+              (User.game == game) &
+              (User.task == task))
+
 def complete_all(user_id: int, game: str, tasks: list[str], period: str = "daily"):
     key = get_today() if period == "daily" else get_week_key()
     for task in tasks:
