@@ -347,7 +347,7 @@ async def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(conv_handler)
 
-    # 스케줄러는 asyncio에서만 실행 가능!
+    # 스케줄러 실행 전에 이벤트 루프가 준비되어 있어야 함
     scheduler = AsyncIOScheduler()
     scheduler.add_job(send_daily_to_all_users, trigger="cron", hour=8, minute=0, args=[app])
     scheduler.start()
