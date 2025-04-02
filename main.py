@@ -6,6 +6,7 @@ import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from utils import users, storage  
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -348,12 +349,15 @@ def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(conv_handler)
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_to_all_users, trigger="cron", hour=8, minute=0, args=[app])
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(lambda: asyncio.run_coroutine_threadsafe(send_daily_to_all_users(app), loop), 
+                      trigger="cron", hour=8, minute=0)
     scheduler.start()
 
     print("Bot is running with scheduler...")
-    app.run_polling()
-    
+    app.run_polling() 
+
 if __name__ == "__main__":
     main()
