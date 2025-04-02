@@ -1,0 +1,23 @@
+app = "your-app-name"
+primary_region = "nrt"
+
+[build]
+  image = "python:3.11-slim"
+
+[env]
+  PYTHONUNBUFFERED = "true"
+
+[experimental]
+  auto_rollback = true
+
+[[services]]
+  internal_port = 8080
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
