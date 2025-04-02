@@ -335,6 +335,20 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "사용 가능한 명령어 목록:\n"
+        "/start - 봇 시작 및 인사\n"
+        "/daily - 오늘의 일일 숙제 확인\n"
+        "/weekly - 이번 주의 주간 숙제 확인\n"
+        "/complete [게임명] [weekly(optional)] - 게임 숙제 일괄 완료 처리\n"
+        "/done - 모든 일일 숙제 완료 시 Day 클리어 처리\n"
+        "/progress - 오늘의 숙제 진행 상황 확인\n"
+        "/addevent - 대화형으로 이벤트 추가\n"
+        "/event - 진행 중인 이벤트 목록 확인\n"
+    )
+    await update.message.reply_text(help_text)
+
 def start_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
@@ -351,6 +365,8 @@ def main():
     app.add_handler(CommandHandler("complete", complete))
     app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("progress", progress))
+    app.add_handler(CommandHandler("event", event))
+    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(conv_handler)
 
     # 전용 이벤트 루프 생성 후 별도 스레드에서 실행
