@@ -1,4 +1,3 @@
-# main.py
 import os
 import json
 import datetime
@@ -17,7 +16,20 @@ def load_quests():
     with open("data/quests.json", "r", encoding="utf-8") as f:
         QUESTS = json.load(f)
 
+# 초기화 작업: 일일 숙제 리셋
+def reset_daily_tasks():
+    # "daily" 기간에 해당하는 모든 기록 삭제
+    storage.db.remove(storage.User.period == "daily")
+    print(f"[{datetime.datetime.now()}] Daily tasks reset.")
+
+# 초기화 작업: 주간 숙제 리셋
+def reset_weekly_tasks():
+    # "weekly" 기간에 해당하는 모든 기록 삭제
+    storage.db.remove(storage.User.period == "weekly")
+    print(f"[{datetime.datetime.now()}] Weekly tasks reset.")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(f"/start called by user {update.effective_user.id}")
     await update.message.reply_text("봇 살아있음!")
     user_id = update.effective_user.id
     users.add_user(user_id)
@@ -36,14 +48,11 @@ def get_week_of_month(date: datetime.date):
 
 def build_daily_keyboard(user_id: int):
     keyboard = []
-
     for game, tasks in QUESTS.items():
         daily_tasks = tasks.get("daily", [])
         if not daily_tasks:
             continue
-
         keyboard.append([InlineKeyboardButton(f"🎮 {game}", callback_data="noop")])
-
         row = []
         for task in daily_tasks:
             checked = storage.is_checked(user_id, game, task)
@@ -51,19 +60,15 @@ def build_daily_keyboard(user_id: int):
             btn_text = f"{checkmark} {task}"
             callback_data = f"{game}|{task}"
             row.append(InlineKeyboardButton(btn_text, callback_data=callback_data))
-
             if len(row) == 2:
                 keyboard.append(row)
                 row = []
-
         if row:
             keyboard.append(row)
-
     return InlineKeyboardMarkup(keyboard)
 
 async def send_daily_to_all_users(app):
     from telegram.constants import ParseMode
-
     for user_id in users.get_all_users():
         try:
             reply_markup = build_daily_keyboard(user_id)
@@ -78,9 +83,8 @@ async def send_daily_to_all_users(app):
 
 async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    users.add_user(user_id)  # 유저 등록
+    users.add_user(user_id)
     reply_markup = build_daily_keyboard(user_id)
-
     await update.message.reply_text(
         "📅 오늘의 일일 숙제 체크리스트입니다.\n숙제를 완료하면 눌러서 체크하세요!",
         reply_markup=reply_markup
@@ -89,7 +93,6 @@ async def daily(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     reply_markup = build_weekly_keyboard(user_id)
-
     await update.message.reply_text(
         "🗓️ 이번 주의 주간 숙제 체크리스트입니다.\n숙제를 완료하면 눌러서 체크하세요!",
         reply_markup=reply_markup
@@ -97,14 +100,11 @@ async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def build_weekly_keyboard(user_id: int):
     keyboard = []
-
     for game, tasks in QUESTS.items():
         weekly_tasks = tasks.get("weekly", [])
         if not weekly_tasks:
             continue
-
         keyboard.append([InlineKeyboardButton(f"📘 {game}", callback_data="noop")])
-
         row = []
         for task in weekly_tasks:
             checked = storage.is_checked(user_id, game, task, period="weekly")
@@ -112,25 +112,20 @@ def build_weekly_keyboard(user_id: int):
             btn_text = f"{checkmark} {task}"
             callback_data = f"weekly|{game}|{task}"
             row.append(InlineKeyboardButton(btn_text, callback_data=callback_data))
-
             if len(row) == 2:
                 keyboard.append(row)
                 row = []
-
         if row:
             keyboard.append(row)
-
     return InlineKeyboardMarkup(keyboard)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     user_id = query.from_user.id
     await query.answer()
-
     if query.data == "noop":
         return
 
-    # 형식 분기: daily는 "게임|숙제", weekly는 "weekly|게임|숙제"
     if query.data.startswith("weekly|"):
         _, game, task = query.data.split("|")
         storage.toggle_check(user_id, game, task, period="weekly")
@@ -141,19 +136,13 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(parts) == 5:
             _, game, evt_name, task, date_key = parts
             storage.toggle_event_check(user_id, game, evt_name, task, date_key)
-            # 필요에 따라, 이벤트 목록을 다시 빌드해서 업데이트할 수 있음.
-            # 예를 들어, reply_markup = build_event_keyboard(user_id)
-            # 여기서는 임시로 기본 이벤트 목록 함수를 호출하거나 메시지 재전송.
-            reply_markup = None  # 또는 적절한 업데이트 처리
+            reply_markup = build_event_keyboard(user_id)
         else:
-            # 잘못된 형식 처리
             reply_markup = None
     else:
-        # 기본 데일리 작업용 데이터 형식: "game|task"
         try:
             game, task = query.data.split("|")
         except ValueError:
-            # 예상치 못한 데이터 형식이면 무시합니다.
             return
         storage.toggle_check(user_id, game, task, period="daily")
         reply_markup = build_daily_keyboard(user_id)
@@ -164,33 +153,25 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def complete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
-
     if not context.args:
         await update.message.reply_text("❗ 사용법: /complete [게임명] [weekly(optional)]")
         return
-
     game = context.args[0]
     period = "weekly" if len(context.args) > 1 and context.args[1].lower() == "weekly" else "daily"
-
     if game not in QUESTS:
         await update.message.reply_text(f"❌ 존재하지 않는 게임입니다: {game}")
         return
-
     task_list = QUESTS[game].get(period, [])
     if not task_list:
         await update.message.reply_text(f"📭 '{game}'에는 {period} 숙제가 없습니다.")
         return
-
     storage.complete_all(user_id, game, task_list, period=period)
     await update.message.reply_text(f"✅ '{game}'의 {period} 숙제를 모두 완료 처리했습니다!")
 
-# main.py에 추가
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
-
     all_completed = True
-
     for game, tasks in QUESTS.items():
         daily_tasks = tasks.get("daily", [])
         for task in daily_tasks:
@@ -199,7 +180,6 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 break
         if not all_completed:
             break
-
     if all_completed:
         day_n = users.update_day_complete(user_id)
         await update.message.reply_text(f"🎉 오늘의 숙제를 모두 완료했습니다!\n🔥 Day {day_n} 클리어!")
@@ -209,32 +189,22 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
-
     msg = "📊 오늘의 진행 상황\n"
-
     for game, tasks in QUESTS.items():
         daily_tasks = tasks.get("daily", [])
         if not daily_tasks:
             continue
-
         total = len(daily_tasks)
-        completed = sum(
-            1 for task in daily_tasks
-            if storage.is_checked(user_id, game, task, period="daily")
-        )
-
+        completed = sum(1 for task in daily_tasks if storage.is_checked(user_id, game, task, period="daily"))
         checkmark = " ✅" if completed == total else ""
         msg += f"\n🎮 {game}: {completed} / {total} 완료{checkmark}"
-
     await update.message.reply_text(msg)
 
 async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
     today = datetime.date.today()
-
     keyboard = []
-
     for game, data in QUESTS.items():
         events = data.get("events", [])
         for evt in events:
@@ -242,35 +212,55 @@ async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
             evt_type = evt["type"]
             until = datetime.date.fromisoformat(evt["until"])
             if today > until:
-                continue  # 이벤트 종료됨
-
+                continue  # 종료된 이벤트
             date_key = today.strftime("%Y-%m-%d") if evt_type == "daily" else evt["until"]
             keyboard.append([InlineKeyboardButton(f"🎉 {game} - {evt_name}", callback_data="noop")])
-
             row = []
             for task in evt["tasks"]:
                 checked = storage.is_event_checked(user_id, game, evt_name, task, date_key)
                 mark = "✅" if checked else "☐"
                 callback_data = f"event|{game}|{evt_name}|{task}|{date_key}"
                 row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
-
                 if len(row) == 2:
                     keyboard.append(row)
                     row = []
             if row:
                 keyboard.append(row)
-
     if not keyboard:
         await update.message.reply_text("📭 현재 진행 중인 이벤트가 없습니다.")
         return
-
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📅 진행 중인 이벤트 목록입니다!", reply_markup=reply_markup)
 
+def build_event_keyboard(user_id: int):
+    # 이벤트 목록을 다시 빌드하는 함수
+    keyboard = []
+    today = datetime.date.today()
+    for game, data in QUESTS.items():
+        events = data.get("events", [])
+        for evt in events:
+            evt_name = evt["name"]
+            evt_type = evt["type"]
+            until = datetime.date.fromisoformat(evt["until"])
+            if today > until:
+                continue
+            date_key = today.strftime("%Y-%m-%d") if evt_type == "daily" else evt["until"]
+            keyboard.append([InlineKeyboardButton(f"🎉 {game} - {evt_name}", callback_data="noop")])
+            row = []
+            for task in evt["tasks"]:
+                checked = storage.is_event_checked(user_id, game, evt_name, task, date_key)
+                mark = "✅" if checked else "☐"
+                callback_data = f"event|{game}|{evt_name}|{task}|{date_key}"
+                row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
+                if len(row) == 2:
+                    keyboard.append(row)
+                    row = []
+            if row:
+                keyboard.append(row)
+    return InlineKeyboardMarkup(keyboard)
+
 from telegram.ext import ConversationHandler
-
 (ASK_GAME, ASK_EVENT_NAME, ASK_UNTIL, ASK_TYPE, ASK_TASKS) = range(5)
-
 event_data = {}
 
 async def addevent_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -282,7 +272,6 @@ async def ask_event_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if game not in QUESTS:
         await update.message.reply_text("❌ 존재하지 않는 게임입니다. 다시 입력해주세요:")
         return ASK_GAME
-
     event_data["game"] = game
     await update.message.reply_text("📛 이벤트 이름을 입력해주세요:")
     return ASK_EVENT_NAME
@@ -299,7 +288,6 @@ async def ask_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("❗날짜 형식이 올바르지 않아요. 예: 2025-04-15")
         return ASK_UNTIL
-
     await update.message.reply_text("📂 이벤트 타입을 입력해주세요 (daily / once):")
     return ASK_TYPE
 
@@ -308,7 +296,6 @@ async def ask_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if type_text not in ["daily", "once"]:
         await update.message.reply_text("❌ daily 또는 once 중에 선택해주세요.")
         return ASK_TYPE
-
     event_data["type"] = type_text
     await update.message.reply_text("📝 숙제들을 쉼표(,)로 구분해서 입력해주세요:\n예: 아이템 수집, 보스 처치")
     return ASK_TASKS
@@ -316,8 +303,6 @@ async def ask_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def save_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
     event_data["tasks"] = tasks
-
-    # 실제로 quests.json 수정
     game = event_data["game"]
     new_event = {
         "name": event_data["name"],
@@ -325,15 +310,10 @@ async def save_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "until": event_data["until"],
         "tasks": event_data["tasks"]
     }
-
     QUESTS[game].setdefault("events", []).append(new_event)
-
-    # 저장
     with open("data/quests.json", "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
-
     await update.message.reply_text(f"✅ 이벤트가 추가되었습니다!\n📌 {event_data['name']} ({event_data['type']})")
-
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -341,7 +321,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 from telegram.ext import MessageHandler, filters
-
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("addevent", addevent_start)],
     states={
@@ -365,6 +344,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/progress - 오늘의 숙제 진행 상황 확인\n"
         "/addevent - 대화형으로 이벤트 추가\n"
         "/event - 진행 중인 이벤트 목록 확인\n"
+        "/help - 이 도움말 메시지 보기\n"
     )
     await update.message.reply_text(help_text)
 
@@ -393,12 +373,16 @@ def main():
     t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
     t.start()
 
-    # BackgroundScheduler 사용: 백그라운드 스케줄러는 자체 스레드에서 실행됩니다.
+    # BackgroundScheduler 사용
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         lambda: asyncio.run_coroutine_threadsafe(send_daily_to_all_users(app), loop),
         trigger="cron", hour=8, minute=0
     )
+    # 매일 오전 5시 일일 숙제 초기화
+    scheduler.add_job(reset_daily_tasks, trigger="cron", hour=5, minute=0)
+    # 매주 월요일 0시 주간 숙제 초기화
+    scheduler.add_job(reset_weekly_tasks, trigger="cron", day_of_week="mon", hour=0, minute=0)
     scheduler.start()
 
     print("Bot is running with scheduler...")
