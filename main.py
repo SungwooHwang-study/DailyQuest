@@ -135,12 +135,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         _, game, task = query.data.split("|")
         storage.toggle_check(user_id, game, task, period="weekly")
         reply_markup = build_weekly_keyboard(user_id)
+    elif query.data.startswith("event|"):
+        # 이벤트 콜백 데이터 형식: "event|game|evt_name|task|date_key"
+        parts = query.data.split("|")
+        if len(parts) == 5:
+            _, game, evt_name, task, date_key = parts
+            storage.toggle_event_check(user_id, game, evt_name, task, date_key)
+            # 필요에 따라, 이벤트 목록을 다시 빌드해서 업데이트할 수 있음.
+            # 예를 들어, reply_markup = build_event_keyboard(user_id)
+            # 여기서는 임시로 기본 이벤트 목록 함수를 호출하거나 메시지 재전송.
+            reply_markup = None  # 또는 적절한 업데이트 처리
+        else:
+            # 잘못된 형식 처리
+            reply_markup = None
     else:
-        game, task = query.data.split("|")
+        # 기본 데일리 작업용 데이터 형식: "game|task"
+        try:
+            game, task = query.data.split("|")
+        except ValueError:
+            # 예상치 못한 데이터 형식이면 무시합니다.
+            return
         storage.toggle_check(user_id, game, task, period="daily")
         reply_markup = build_daily_keyboard(user_id)
 
-    await query.edit_message_reply_markup(reply_markup=reply_markup)
+    if reply_markup is not None:
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
 
 async def complete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
