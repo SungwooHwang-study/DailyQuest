@@ -245,6 +245,94 @@ async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("📅 진행 중인 이벤트 목록입니다!", reply_markup=reply_markup)
 
+from telegram.ext import ConversationHandler
+
+(ASK_GAME, ASK_EVENT_NAME, ASK_UNTIL, ASK_TYPE, ASK_TASKS) = range(5)
+
+event_data = {}
+
+async def addevent_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🎮 이벤트를 추가할 게임명을 입력해주세요:")
+    return ASK_GAME
+
+async def ask_event_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    game = update.message.text
+    if game not in QUESTS:
+        await update.message.reply_text("❌ 존재하지 않는 게임입니다. 다시 입력해주세요:")
+        return ASK_GAME
+
+    event_data["game"] = game
+    await update.message.reply_text("📛 이벤트 이름을 입력해주세요:")
+    return ASK_EVENT_NAME
+
+async def ask_until(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    event_data["name"] = update.message.text
+    await update.message.reply_text("📅 이벤트 종료일을 입력해주세요 (예: 2025-04-15):")
+    return ASK_UNTIL
+
+async def ask_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        date = datetime.date.fromisoformat(update.message.text)
+        event_data["until"] = str(date)
+    except:
+        await update.message.reply_text("❗날짜 형식이 올바르지 않아요. 예: 2025-04-15")
+        return ASK_UNTIL
+
+    await update.message.reply_text("📂 이벤트 타입을 입력해주세요 (daily / once):")
+    return ASK_TYPE
+
+async def ask_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    type_text = update.message.text.lower()
+    if type_text not in ["daily", "once"]:
+        await update.message.reply_text("❌ daily 또는 once 중에 선택해주세요.")
+        return ASK_TYPE
+
+    event_data["type"] = type_text
+    await update.message.reply_text("📝 숙제들을 쉼표(,)로 구분해서 입력해주세요:\n예: 아이템 수집, 보스 처치")
+    return ASK_TASKS
+
+async def save_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
+    event_data["tasks"] = tasks
+
+    # 실제로 quests.json 수정
+    game = event_data["game"]
+    new_event = {
+        "name": event_data["name"],
+        "type": event_data["type"],
+        "until": event_data["until"],
+        "tasks": event_data["tasks"]
+    }
+
+    QUESTS[game].setdefault("events", []).append(new_event)
+
+    # 저장
+    with open("data/quests.json", "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+
+    await update.message.reply_text(f"✅ 이벤트가 추가되었습니다!\n📌 {event_data['name']} ({event_data['type']})")
+
+    return ConversationHandler.END
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚫 이벤트 추가가 취소되었습니다.")
+    return ConversationHandler.END
+
+from telegram.ext import MessageHandler, filters
+
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler("addevent", addevent_start)],
+    states={
+        ASK_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_event_name)],
+        ASK_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_until)],
+        ASK_UNTIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_type)],
+        ASK_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_tasks)],
+        ASK_TASKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_event)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+
 def main():
     load_quests()
 
@@ -258,6 +346,7 @@ def main():
     app.add_handler(CommandHandler("complete", complete))
     app.add_handler(CommandHandler("done", done))
     app.add_handler(CommandHandler("progress", progress))
+    app.add_handler(conv_handler)
 
 
     # 스케줄러 설정
