@@ -4,7 +4,7 @@ import json
 import datetime
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from utils import users, storage  
 
@@ -347,14 +347,21 @@ async def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(conv_handler)
 
-    # 스케줄러 실행 전에 이벤트 루프가 준비되어 있어야 함
-    scheduler = AsyncIOScheduler()
+    # 이벤트 루프 명시
+    loop = asyncio.get_running_loop()
+
+    # AsyncScheduler에 현재 loop 명시적으로 전달
+    scheduler = AsyncIOScheduler(event_loop=loop)
     scheduler.add_job(send_daily_to_all_users, trigger="cron", hour=8, minute=0, args=[app])
     scheduler.start()
 
     print("Bot is running with scheduler...")
-    await app.run_polling()
+
+    await app.initialize()
+    await app.start()
+    await app.updater.start_polling()
+    await app.updater.wait_until_closed()
+    await app.stop()
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(main())
