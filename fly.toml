@@ -1,4 +1,4 @@
-app = "your-app-name"
+app = "dailyquest"
 primary_region = "nrt"
 
 [build]
