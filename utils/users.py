@@ -2,8 +2,12 @@
 from datetime import datetime
 from tinydb import TinyDB, Query
 
+
 db = TinyDB("data/users.json")
 User = Query()
+
+def get_all_users():
+    return [entry['user_id'] for entry in db.all() if 'user_id' in entry]
 
 def add_user(user_id: int):
     if not db.search(User.user_id == user_id):
