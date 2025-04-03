@@ -26,6 +26,7 @@
 
 ```
 TELEGRAM_BOT_TOKEN=your_bot_token_here
+SELF_URL=https://your-app-name.fly.dev
 ```
 
 2. 프로젝트 실행:
