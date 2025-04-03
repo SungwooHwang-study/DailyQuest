@@ -3,6 +3,8 @@ import json
 import datetime
 import asyncio
 import threading
+import aiohttp
+from pytz import timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -10,6 +12,18 @@ from utils import users, storage
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 QUESTS = {}
+
+async def ping_self():
+    url = os.getenv("SELF_URL")  # Fly.io에 배포된 본인 주소를 환경변수로 지정
+    if not url:
+        print("[경고] SELF_URL 환경변수가 설정되지 않음. 슬립 방지 ping을 건너뜀.")
+        return
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                print(f"[슬립방지 ping] 상태 코드: {resp.status}")
+    except Exception as e:
+        print(f"[슬립방지 ping 실패] {e}")
 
 def load_quests():
     global QUESTS
@@ -377,12 +391,20 @@ def main():
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         lambda: asyncio.run_coroutine_threadsafe(send_daily_to_all_users(app), loop),
-        trigger="cron", hour=8, minute=0
+        trigger="cron",
+        hour=8,
+        minute=0,
+        timezone=timezone("Asia/Seoul")  # KST 지정!
     )
     # 매일 오전 5시 일일 숙제 초기화
-    scheduler.add_job(reset_daily_tasks, trigger="cron", hour=5, minute=0)
-    # 매주 월요일 0시 주간 숙제 초기화
-    scheduler.add_job(reset_weekly_tasks, trigger="cron", day_of_week="mon", hour=0, minute=0)
+    scheduler.add_job(reset_daily_tasks, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
+    # 매주 월요일 오전 5시 주간 숙제 초기화
+    scheduler.add_job(reset_weekly_tasks, trigger="cron", day_of_week="mon", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
+    # 10분 주기 슬립 방지 ping
+    scheduler.add_job(
+    lambda: asyncio.run_coroutine_threadsafe(ping_self(), loop),
+    trigger="interval",
+    minutes=10)
     scheduler.start()
 
     print("Bot is running with scheduler...")
