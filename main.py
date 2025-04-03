@@ -347,6 +347,11 @@ conv_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
+async def test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    await update.message.reply_text("📨 테스트 알림을 전송합니다.")
+    await send_daily_to_all_users(context.application)
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "사용 가능한 명령어 목록:\n"
@@ -380,6 +385,7 @@ def main():
     app.add_handler(CommandHandler("progress", progress))
     app.add_handler(CommandHandler("event", event))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("test", test_notify))
     app.add_handler(conv_handler)
 
     # 전용 이벤트 루프 생성 후 별도 스레드에서 실행
