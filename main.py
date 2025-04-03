@@ -4,14 +4,29 @@ import datetime
 import asyncio
 import threading
 import aiohttp
+from aiohttp import web
 from pytz import timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 from apscheduler.schedulers.background import BackgroundScheduler
 from utils import users, storage  
 
+print(timezone("Asia/Seoul"))
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 QUESTS = {}
+
+async def handle_ping(request):
+    return web.Response(text="pong")
+
+async def start_http_server():
+    app = web.Application()
+    app.router.add_get("/", handle_ping)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=8080)
+    await site.start()
+    print("[HTTP] Ping server running on port 8080")
 
 async def ping_self():
     url = os.getenv("SELF_URL")  # Fly.io에 배포된 본인 주소를 환경변수로 지정
@@ -367,6 +382,19 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text)
 
+loop = asyncio.new_event_loop()
+
+def safe_run(coro):
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+
+    def handle_exception(f):
+        exception = f.exception()
+        if exception:
+            print("[스케줄러 예외]", exception)
+
+    future.add_done_callback(handle_exception)
+    return future
+
 def start_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
@@ -389,19 +417,24 @@ def main():
     app.add_handler(conv_handler)
 
     # 전용 이벤트 루프 생성 후 별도 스레드에서 실행
-    loop = asyncio.new_event_loop()
     t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
     t.start()
 
+    # HTTP 서버도 이벤트 루프에서 함께 실행
+    safe_run(start_http_server())
+
     # BackgroundScheduler 사용
     scheduler = BackgroundScheduler()
+
+    # 매일 오전 8시 알림 전송 (KST)
     scheduler.add_job(
-        lambda: asyncio.run_coroutine_threadsafe(send_daily_to_all_users(app), loop),
+        lambda: safe_run(send_daily_to_all_users(app)),
         trigger="cron",
         hour=8,
         minute=0,
-        timezone=timezone("Asia/Seoul")  # KST 지정!
+        timezone=timezone("Asia/Seoul")
     )
+
     # 매일 오전 5시 일일 숙제 초기화
     scheduler.add_job(reset_daily_tasks, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
     # 매주 월요일 오전 5시 주간 숙제 초기화
@@ -411,6 +444,7 @@ def main():
     lambda: asyncio.run_coroutine_threadsafe(ping_self(), loop),
     trigger="interval",
     minutes=10)
+
     scheduler.start()
 
     print("Bot is running with scheduler...")
