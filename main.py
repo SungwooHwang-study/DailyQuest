@@ -182,18 +182,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def complete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
+    
     if not context.args:
         await update.message.reply_text("❗ 사용법: /complete [게임명] [weekly(optional)]")
         return
-    game = context.args[0]
-    period = "weekly" if len(context.args) > 1 and context.args[1].lower() == "weekly" else "daily"
+
+    # 주간 여부 확인
+    if context.args[-1].lower() == "weekly":
+        game = " ".join(context.args[:-1])
+        period = "weekly"
+    else:
+        game = " ".join(context.args)
+        period = "daily"
+
     if game not in QUESTS:
         await update.message.reply_text(f"❌ 존재하지 않는 게임입니다: {game}")
         return
+
     task_list = QUESTS[game].get(period, [])
     if not task_list:
         await update.message.reply_text(f"📭 '{game}'에는 {period} 숙제가 없습니다.")
         return
+
     storage.complete_all(user_id, game, task_list, period=period)
     await update.message.reply_text(f"✅ '{game}'의 {period} 숙제를 모두 완료 처리했습니다!")
 
