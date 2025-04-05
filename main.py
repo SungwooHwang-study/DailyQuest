@@ -7,7 +7,7 @@ import aiohttp
 from aiohttp import web
 from pytz import timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 from apscheduler.schedulers.background import BackgroundScheduler
 from utils import users, storage  
 
@@ -147,6 +147,95 @@ def build_weekly_keyboard(user_id: int):
         if row:
             keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
+
+(ADD_GAME, ADD_PERIOD, ADD_TASKS) = range(3)
+(DEL_GAME, DEL_PERIOD, DEL_TASKS) = range(3, 6)
+
+add_data = {}
+del_data = {}
+
+async def addtask_start(update, context):
+    await update.message.reply_text("📥 숙제를 추가할 게임명을 입력해주세요:")
+    return ADD_GAME
+
+async def addtask_period(update, context):
+    game = update.message.text.strip()
+    if game not in QUESTS:
+        await update.message.reply_text("❌ 존재하지 않는 게임입니다. 다시 입력해주세요:")
+        return ADD_GAME
+    add_data["game"] = game
+    await update.message.reply_text("📂 추가할 숙제의 유형을 선택해주세요 (daily 또는 weekly):")
+    return ADD_PERIOD
+
+async def addtask_tasks(update, context):
+    period = update.message.text.strip().lower()
+    if period not in ["daily", "weekly"]:
+        await update.message.reply_text("❗ 유형은 daily 또는 weekly 중 하나만 입력해주세요:")
+        return ADD_PERIOD
+    add_data["period"] = period
+    await update.message.reply_text("📝 추가할 숙제들을 쉼표로 구분하여 입력해주세요:")
+    return ADD_TASKS
+
+async def addtask_save(update, context):
+    tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
+    game, period = add_data["game"], add_data["period"]
+    QUESTS[game].setdefault(period, []).extend(t for t in tasks if t not in QUESTS[game][period])
+    with open("data/quests.json", "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+    await update.message.reply_text(f"✅ '{game}'의 {period} 숙제에 항목을 추가했습니다!")
+    return ConversationHandler.END
+
+async def deltask_start(update, context):
+    await update.message.reply_text("📤 숙제를 삭제할 게임명을 입력해주세요:")
+    return DEL_GAME
+
+async def deltask_period(update, context):
+    game = update.message.text.strip()
+    if game not in QUESTS:
+        await update.message.reply_text("❌ 존재하지 않는 게임입니다. 다시 입력해주세요:")
+        return DEL_GAME
+    del_data["game"] = game
+    await update.message.reply_text("📂 삭제할 숙제의 유형을 선택해주세요 (daily 또는 weekly):")
+    return DEL_PERIOD
+
+async def deltask_tasks(update, context):
+    period = update.message.text.strip().lower()
+    if period not in ["daily", "weekly"]:
+        await update.message.reply_text("❗ 유형은 daily 또는 weekly 중 하나만 입력해주세요:")
+        return DEL_PERIOD
+    del_data["period"] = period
+    await update.message.reply_text("🧹 삭제할 숙제들을 쉼표로 구분하여 입력해주세요:")
+    return DEL_TASKS
+
+async def deltask_save(update, context):
+    tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
+    game, period = del_data["game"], del_data["period"]
+    QUESTS[game][period] = [t for t in QUESTS[game].get(period, []) if t not in tasks]
+    with open("data/quests.json", "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+    await update.message.reply_text(f"🗑️ '{game}'의 {period} 숙제에서 항목을 삭제했습니다!")
+    return ConversationHandler.END
+
+# 등록
+addtask_handler = ConversationHandler(
+    entry_points=[CommandHandler("addtask", addtask_start)],
+    states={
+        ADD_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, addtask_period)],
+        ADD_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, addtask_tasks)],
+        ADD_TASKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, addtask_save)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+deltask_handler = ConversationHandler(
+    entry_points=[CommandHandler("deltask", deltask_start)],
+    states={
+        DEL_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, deltask_period)],
+        DEL_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, deltask_tasks)],
+        DEL_TASKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, deltask_save)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -359,6 +448,108 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 이벤트 추가가 취소되었습니다.")
     return ConversationHandler.END
 
+async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg = "📋 현재 등록된 숙제 목록입니다:\n"
+    for game, tasks in QUESTS.items():
+        msg += f"\n🎮 {game}\n"
+        daily = tasks.get("daily", [])
+        weekly = tasks.get("weekly", [])
+        if daily:
+            msg += f"- Daily: {', '.join(daily)}\n"
+        if weekly:
+            msg += f"- Weekly: {', '.join(weekly)}\n"
+    await update.message.reply_text(msg)
+
+(RENAME_OLD_NAME, RENAME_NEW_NAME) = range(10, 12)
+rename_data = {}
+
+async def renamegame_start(update, context):
+    await update.message.reply_text("✏️ 변경할 기존 게임명을 입력해주세요:")
+    return RENAME_OLD_NAME
+
+async def renamegame_new(update, context):
+    old_name = update.message.text.strip()
+    if old_name not in QUESTS:
+        await update.message.reply_text("❌ 해당 게임이 존재하지 않습니다. 다시 입력해주세요:")
+        return RENAME_OLD_NAME
+    rename_data["old"] = old_name
+    await update.message.reply_text("📛 새 게임명을 입력해주세요:")
+    return RENAME_NEW_NAME
+
+async def renamegame_apply(update, context):
+    new_name = update.message.text.strip()
+    old_name = rename_data["old"]
+    QUESTS[new_name] = QUESTS.pop(old_name)
+    with open("data/quests.json", "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+    await update.message.reply_text(f"✅ '{old_name}' → '{new_name}' 로 이름이 변경되었습니다.")
+    return ConversationHandler.END
+
+(EDIT_GAME, EDIT_PERIOD, EDIT_OLD_TASK, EDIT_NEW_TASK) = range(20, 24)
+edit_data = {}
+
+async def editquest_start(update, context):
+    await update.message.reply_text("🛠 수정할 게임명을 입력해주세요:")
+    return EDIT_GAME
+
+async def editquest_period(update, context):
+    game = update.message.text.strip()
+    if game not in QUESTS:
+        await update.message.reply_text("❌ 해당 게임이 존재하지 않습니다. 다시 입력해주세요:")
+        return EDIT_GAME
+    edit_data["game"] = game
+    await update.message.reply_text("📂 수정할 숙제 유형을 입력해주세요 (daily / weekly):")
+    return EDIT_PERIOD
+
+async def editquest_old(update, context):
+    period = update.message.text.strip().lower()
+    if period not in ["daily", "weekly"]:
+        await update.message.reply_text("❗ daily 또는 weekly 중에서 입력해주세요:")
+        return EDIT_PERIOD
+    edit_data["period"] = period
+    await update.message.reply_text("✏️ 수정할 기존 숙제명을 입력해주세요:")
+    return EDIT_OLD_TASK
+
+async def editquest_new(update, context):
+    old_task = update.message.text.strip()
+    game, period = edit_data["game"], edit_data["period"]
+    if old_task not in QUESTS[game].get(period, []):
+        await update.message.reply_text("❌ 해당 숙제가 존재하지 않습니다. 다시 입력해주세요:")
+        return EDIT_OLD_TASK
+    edit_data["old"] = old_task
+    await update.message.reply_text("🆕 새 숙제명을 입력해주세요:")
+    return EDIT_NEW_TASK
+
+async def editquest_apply(update, context):
+    new_task = update.message.text.strip()
+    game, period, old = edit_data["game"], edit_data["period"], edit_data["old"]
+    tasks = QUESTS[game][period]
+    QUESTS[game][period] = [new_task if t == old else t for t in tasks]
+    with open("data/quests.json", "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+    await update.message.reply_text(f"✅ '{old}' → '{new_task}' 로 숙제명이 수정되었습니다!")
+    return ConversationHandler.END
+
+renamegame_handler = ConversationHandler(
+    entry_points=[CommandHandler("renamegame", renamegame_start)],
+    states={
+        RENAME_OLD_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, renamegame_new)],
+        RENAME_NEW_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, renamegame_apply)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+editquest_handler = ConversationHandler(
+    entry_points=[CommandHandler("editquest", editquest_start)],
+    states={
+        EDIT_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, editquest_period)],
+        EDIT_PERIOD: [MessageHandler(filters.TEXT & ~filters.COMMAND, editquest_old)],
+        EDIT_OLD_TASK: [MessageHandler(filters.TEXT & ~filters.COMMAND, editquest_new)],
+        EDIT_NEW_TASK: [MessageHandler(filters.TEXT & ~filters.COMMAND, editquest_apply)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
 from telegram.ext import MessageHandler, filters
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler("addevent", addevent_start)],
@@ -388,6 +579,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/progress - 오늘의 숙제 진행 상황 확인\n"
         "/addevent - 대화형으로 이벤트 추가\n"
         "/event - 진행 중인 이벤트 목록 확인\n"
+        "/addtask - 숙제 항목 추가 (입력형)\n"
+        "/deltask - 숙제 항목 삭제 (입력형)\n"
+        "/listtasks - 등록된 게임 및 숙제 목록 보기\n"
+        "/renamegame - 게임 이름 수정 (입력형)\n"
+        "/editquest - 숙제 항목 이름 수정 (입력형)\n"
         "/help - 이 도움말 메시지 보기\n"
     )
     await update.message.reply_text(help_text)
@@ -424,6 +620,11 @@ def main():
     app.add_handler(CommandHandler("event", event))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("test", test_notify))
+    app.add_handler(CommandHandler("listtasks", listtasks))
+    app.add_handler(renamegame_handler)
+    app.add_handler(editquest_handler)
+    app.add_handler(addtask_handler)
+    app.add_handler(deltask_handler)
     app.add_handler(conv_handler)
 
     # 전용 이벤트 루프 생성 후 별도 스레드에서 실행
