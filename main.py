@@ -57,6 +57,10 @@ def reset_weekly_tasks():
     storage.db.remove(storage.User.period == "weekly")
     print(f"[{datetime.datetime.now()}] Weekly tasks reset.")
 
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚫 이벤트 추가가 취소되었습니다.")
+    return ConversationHandler.END
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"/start called by user {update.effective_user.id}")
     await update.message.reply_text("봇 살아있음!")
@@ -442,10 +446,6 @@ async def save_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open("data/quests.json", "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
     await update.message.reply_text(f"✅ 이벤트가 추가되었습니다!\n📌 {event_data['name']} ({event_data['type']})")
-    return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚫 이벤트 추가가 취소되었습니다.")
     return ConversationHandler.END
 
 async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
