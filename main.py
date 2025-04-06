@@ -5,8 +5,10 @@ import asyncio
 import threading
 import aiohttp
 from aiohttp import web
+from datetime import datetime, timedelta
 from pytz import timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 from apscheduler.schedulers.background import BackgroundScheduler
 from utils import users, storage  
@@ -303,20 +305,41 @@ async def complete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
+    today = datetime.today().date()
     all_completed = True
-    for game, tasks in QUESTS.items():
-        daily_tasks = tasks.get("daily", [])
-        for task in daily_tasks:
-            if not storage.is_checked(user_id, game, task, period="daily"):
-                all_completed = False
-                break
+
+    for game, data in QUESTS.items():
+        all_tasks = set(data.get("daily", []))
+
+        # 이벤트에서 daily 타입 숙제 포함
+        for evt in data.get("events", []):
+            until = datetime.fromisoformat(evt["until"]).date()
+            if until >= today:
+                for task in evt.get("tasks", []):
+                    if task["type"] == "daily":
+                        all_tasks.add((evt["name"], task["name"]))  # (이벤트명, 과제명)
+        
+        for task in all_tasks:
+            if isinstance(task, tuple):
+                evt_name, task_name = task
+                date_key = today.strftime("%Y-%m-%d")
+                if not storage.is_event_checked(user_id, game, evt_name, task_name, date_key):
+                    all_completed = False
+                    break
+            else:
+                if not storage.is_checked(user_id, game, task, period="daily"):
+                    all_completed = False
+                    break
+
         if not all_completed:
             break
+
     if all_completed:
         day_n = users.update_day_complete(user_id)
         await update.message.reply_text(f"🎉 오늘의 숙제를 모두 완료했습니다!\n🔥 Day {day_n} 클리어!")
     else:
-        await update.message.reply_text("🧐 아직 완료되지 않은 숙제가 있어요.\n하나라도 빠지면 Day 카운트가 올라가지 않아요!")
+        await update.message.reply_text("🧐 아직 완료되지 않은 숙제가 있어요.\n이벤트 숙제도 포함해서 모두 완료해야 Day 카운트가 올라가요!")
+
 
 async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -391,8 +414,7 @@ def build_event_keyboard(user_id: int):
                 keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
 
-from telegram.ext import ConversationHandler
-(ASK_GAME, ASK_EVENT_NAME, ASK_UNTIL, ASK_TYPE, ASK_TASKS) = range(5)
+(ASK_GAME, ASK_EVENT_NAME, ASK_UNTIL, ASK_TASK_NAME, ASK_TASK_TYPE, ASK_MORE_TASKS) = range(6)
 event_data = {}
 
 async def addevent_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -404,6 +426,7 @@ async def ask_event_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if game not in QUESTS:
         await update.message.reply_text("❌ 존재하지 않는 게임입니다. 다시 입력해주세요:")
         return ASK_GAME
+    event_data.clear()
     event_data["game"] = game
     await update.message.reply_text("📛 이벤트 이름을 입력해주세요:")
     return ASK_EVENT_NAME
@@ -413,52 +436,64 @@ async def ask_until(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📅 이벤트 종료일을 입력해주세요 (예: 2025-04-15):")
     return ASK_UNTIL
 
-async def ask_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def ask_task_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        date = datetime.date.fromisoformat(update.message.text)
-        event_data["until"] = str(date)
+        until_date = datetime.fromisoformat(update.message.text).date()
+        event_data["until"] = str(until_date)
+        event_data["tasks"] = []
     except:
         await update.message.reply_text("❗날짜 형식이 올바르지 않아요. 예: 2025-04-15")
         return ASK_UNTIL
-    await update.message.reply_text("📂 이벤트 타입을 입력해주세요 (daily / once):")
-    return ASK_TYPE
+    await update.message.reply_text("📝 숙제명을 입력해주세요:")
+    return ASK_TASK_NAME
 
-async def ask_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    type_text = update.message.text.lower()
-    if type_text not in ["daily", "once"]:
-        await update.message.reply_text("❌ daily 또는 once 중에 선택해주세요.")
-        return ASK_TYPE
-    event_data["type"] = type_text
-    await update.message.reply_text("📝 숙제들을 쉼표(,)로 구분해서 입력해주세요:\n예: 아이템 수집, 보스 처치")
-    return ASK_TASKS
+async def ask_task_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    event_data["current_task"] = update.message.text.strip()
+    await update.message.reply_text("📂 숙제 타입을 선택해주세요 (daily / once):")
+    return ASK_TASK_TYPE
 
-async def save_event(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
-    event_data["tasks"] = tasks
-    game = event_data["game"]
-    new_event = {
-        "name": event_data["name"],
-        "type": event_data["type"],
-        "until": event_data["until"],
-        "tasks": event_data["tasks"]
-    }
-    QUESTS[game].setdefault("events", []).append(new_event)
-    with open("data/quests.json", "w", encoding="utf-8") as f:
-        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
-    await update.message.reply_text(f"✅ 이벤트가 추가되었습니다!\n📌 {event_data['name']} ({event_data['type']})")
-    return ConversationHandler.END
+async def ask_more_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    task_type = update.message.text.strip().lower()
+    if task_type not in ["daily", "once"]:
+        await update.message.reply_text("❌ daily 또는 once 중에 선택해주세요:")
+        return ASK_TASK_TYPE
+    event_data["tasks"].append({
+        "name": event_data["current_task"],
+        "type": task_type
+    })
+    await update.message.reply_text("➕ 숙제를 더 추가하시겠습니까? (예/아니오):")
+    return ASK_MORE_TASKS
 
-async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "📋 현재 등록된 숙제 목록입니다:\n"
-    for game, tasks in QUESTS.items():
-        msg += f"\n🎮 {game}\n"
-        daily = tasks.get("daily", [])
-        weekly = tasks.get("weekly", [])
-        if daily:
-            msg += f"- Daily: {', '.join(daily)}\n"
-        if weekly:
-            msg += f"- Weekly: {', '.join(weekly)}\n"
-    await update.message.reply_text(msg)
+async def save_event_or_continue(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    answer = update.message.text.strip().lower()
+    if answer in ["아니오", "n", "no"]:
+        game = event_data["game"]
+        new_event = {
+            "name": event_data["name"],
+            "until": event_data["until"],
+            "tasks": event_data["tasks"]
+        }
+        QUESTS[game].setdefault("events", []).append(new_event)
+        with open("data/quests.json", "w", encoding="utf-8") as f:
+            json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+        await update.message.reply_text(f"✅ 이벤트가 추가되었습니다!\n📌 {event_data['name']} ({len(event_data['tasks'])}개 숙제)")
+        return ConversationHandler.END
+    else:
+        await update.message.reply_text("📝 다음 숙제명을 입력해주세요:")
+        return ASK_TASK_NAME
+    
+addevent_handler = ConversationHandler(
+    entry_points=[CommandHandler("addevent", addevent_start)],
+    states={
+        ASK_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_event_name)],
+        ASK_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_until)],
+        ASK_UNTIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_task_name)],
+        ASK_TASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_task_type)],
+        ASK_TASK_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_more_tasks)],
+        ASK_MORE_TASKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_event_or_continue)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
 
 (RENAME_OLD_NAME, RENAME_NEW_NAME) = range(10, 12)
 rename_data = {}
@@ -550,18 +585,195 @@ editquest_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
-from telegram.ext import MessageHandler, filters
-conv_handler = ConversationHandler(
-    entry_points=[CommandHandler("addevent", addevent_start)],
+# daily 이벤트 반영 및 만료 제거
+def refresh_event_tasks():
+    today = datetime.today().date()
+    modified = False
+    for game, data in QUESTS.items():
+        events = data.get("events", [])
+        new_events = []
+        daily_from_events = []
+        for evt in events:
+            until = datetime.fromisoformat(evt["until"]).date()
+            if today > until:
+                modified = True  # 이벤트가 끝났으면 제거
+                continue
+            for task in evt.get("tasks", []):
+                if task["type"] == "daily" and task["name"] not in data["daily"]:
+                    daily_from_events.append(task["name"])
+                    modified = True
+            new_events.append(evt)
+        data["events"] = new_events
+        for task_name in daily_from_events:
+            if task_name not in data["daily"]:
+                data["daily"].append(task_name)
+    if modified:
+        with open("data/quests.json", "w", encoding="utf-8") as f:
+            json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+        print("✅ daily 이벤트 반영 및 만료 제거 완료")
+
+# 이벤트 알림용 함수
+async def notify_once_event_tasks(app):
+    today = datetime.today().date()
+    tomorrow = today + timedelta(days=1)
+    for user_id in users.get_all_users():
+        try:
+            msg = "📢 내일 마감되는 one-time 이벤트 숙제가 있어요!\n"
+            found = False
+            for game, data in QUESTS.items():
+                for evt in data.get("events", []):
+                    until = datetime.fromisoformat(evt["until"]).date()
+                    if until == tomorrow:
+                        once_tasks = [t["name"] for t in evt.get("tasks", []) if t["type"] == "once"]
+                        if once_tasks:
+                            found = True
+                            msg += f"\n🎮 {game} - {evt['name']}\n- " + "\n- ".join(once_tasks)
+            if found:
+                await app.bot.send_message(chat_id=user_id, text=msg)
+        except Exception as e:
+            print(f"[ERROR] {user_id}에게 one-time 알림 실패: {e}")
+
+# 이벤트 삭제 핸들러
+(DEL_EVT_GAME, DEL_EVT_NAME) = range(30, 32)
+del_event_data = {}
+
+async def delevent_start(update, context):
+    await update.message.reply_text("🗑️ 삭제할 이벤트의 게임명을 입력해주세요:")
+    return DEL_EVT_GAME
+
+async def delevent_name(update, context):
+    game = update.message.text.strip()
+    if game not in QUESTS or not QUESTS[game].get("events"):
+        await update.message.reply_text("❌ 이벤트가 존재하지 않는 게임입니다.")
+        return ConversationHandler.END
+    del_event_data["game"] = game
+    event_names = [evt["name"] for evt in QUESTS[game]["events"]]
+    await update.message.reply_text(f"🔍 삭제할 이벤트 이름을 입력해주세요:\n현재 이벤트: {', '.join(event_names)}")
+    return DEL_EVT_NAME
+
+async def delevent_confirm(update, context):
+    evt_name = update.message.text.strip()
+    game = del_event_data["game"]
+    before_count = len(QUESTS[game]["events"])
+    QUESTS[game]["events"] = [evt for evt in QUESTS[game]["events"] if evt["name"] != evt_name]
+    after_count = len(QUESTS[game]["events"])
+    if before_count == after_count:
+        await update.message.reply_text("❗ 해당 이벤트를 찾을 수 없습니다.")
+    else:
+        with open("data/quests.json", "w", encoding="utf-8") as f:
+            json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+        await update.message.reply_text(f"✅ '{evt_name}' 이벤트가 삭제되었습니다.")
+    return ConversationHandler.END
+
+delevent_handler = ConversationHandler(
+    entry_points=[CommandHandler("delevent", delevent_start)],
     states={
-        ASK_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_event_name)],
-        ASK_EVENT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_until)],
-        ASK_UNTIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_type)],
-        ASK_TYPE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_tasks)],
-        ASK_TASKS: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_event)],
+        DEL_EVT_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, delevent_name)],
+        DEL_EVT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, delevent_confirm)],
     },
     fallbacks=[CommandHandler("cancel", cancel)],
 )
+
+# 이벤트 수정 핸들러
+(EDIT_EVT_GAME, EDIT_EVT_NAME, EDIT_EVT_OLD_TASK, EDIT_EVT_NEW_TASK) = range(40, 44)
+edit_event_data = {}
+
+async def editevent_start(update, context):
+    await update.message.reply_text("🛠 이벤트 숙제를 수정할 게임명을 입력해주세요:")
+    return EDIT_EVT_GAME
+
+async def editevent_name(update, context):
+    game = update.message.text.strip()
+    if game not in QUESTS or not QUESTS[game].get("events"):
+        await update.message.reply_text("❌ 이벤트가 존재하지 않는 게임입니다.")
+        return ConversationHandler.END
+    edit_event_data["game"] = game
+    event_names = [evt["name"] for evt in QUESTS[game]["events"]]
+    await update.message.reply_text(f"📝 이벤트 이름을 입력해주세요:\n{', '.join(event_names)}")
+    return EDIT_EVT_NAME
+
+async def editevent_old_task(update, context):
+    name = update.message.text.strip()
+    game = edit_event_data["game"]
+    evt = next((e for e in QUESTS[game]["events"] if e["name"] == name), None)
+    if not evt:
+        await update.message.reply_text("❌ 이벤트를 찾을 수 없습니다.")
+        return ConversationHandler.END
+    edit_event_data["name"] = name
+    task_names = [t["name"] for t in evt["tasks"]]
+    await update.message.reply_text(f"✏️ 수정할 숙제명을 입력해주세요:\n{', '.join(task_names)}")
+    return EDIT_EVT_OLD_TASK
+
+async def editevent_new_task(update, context):
+    old_task = update.message.text.strip()
+    game, name = edit_event_data["game"], edit_event_data["name"]
+    evt = next((e for e in QUESTS[game]["events"] if e["name"] == name), None)
+    task = next((t for t in evt["tasks"] if t["name"] == old_task), None)
+    if not task:
+        await update.message.reply_text("❌ 해당 숙제가 없습니다.")
+        return ConversationHandler.END
+    edit_event_data["old_task"] = task
+    await update.message.reply_text("🆕 새 숙제명을 입력해주세요:")
+    return EDIT_EVT_NEW_TASK
+
+async def editevent_apply(update, context):
+    new_name = update.message.text.strip()
+    edit_event_data["old_task"]["name"] = new_name
+    with open("data/quests.json", "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+    await update.message.reply_text("✅ 숙제명이 수정되었습니다.")
+    return ConversationHandler.END
+
+editevent_handler = ConversationHandler(
+    entry_points=[CommandHandler("editevent", editevent_start)],
+    states={
+        EDIT_EVT_GAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, editevent_name)],
+        EDIT_EVT_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, editevent_old_task)],
+        EDIT_EVT_OLD_TASK: [MessageHandler(filters.TEXT & ~filters.COMMAND, editevent_new_task)],
+        EDIT_EVT_NEW_TASK: [MessageHandler(filters.TEXT & ~filters.COMMAND, editevent_apply)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)],
+)
+
+# D-day
+dday = (until - today).days
+keyboard.append([
+    InlineKeyboardButton(f"🎉 {game} - {evt_name} (D-{dday})", callback_data="noop")
+])
+
+# 숙제 목록 출력
+async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    today = datetime.today().date()
+    msg = "📋 현재 등록된 숙제 목록입니다:\n"
+
+    # 기본 숙제 출력
+    for game, tasks in QUESTS.items():
+        msg += f"\n🎮 {game}\n"
+        daily = tasks.get("daily", [])
+        weekly = tasks.get("weekly", [])
+        if daily:
+            msg += f"- Daily: {', '.join(daily)}\n"
+        if weekly:
+            msg += f"- Weekly: {', '.join(weekly)}\n"
+
+    # 이벤트 D-DAY 정렬 후 출력
+    event_lines = []
+    for game, data in QUESTS.items():
+        for evt in data.get("events", []):
+            until = datetime.fromisoformat(evt["until"]).date()
+            dday = (until - today).days
+            dday_text = f"D-{dday}" if dday >= 0 else f"D+{abs(dday)}"
+            line = f"[ {dday_text} ] {game} - {evt['name']}\n"
+            for task in evt["tasks"]:
+                line += f"  • [{task['type']}] {task['name']}\n"
+            event_lines.append((dday, line))
+
+    if event_lines:
+        msg += "\n📅 진행 중인 이벤트:\n"
+        for _, line in sorted(event_lines, key=lambda x: x[0]):
+            msg += line
+
+    await update.message.reply_text(msg)
 
 async def test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -570,23 +782,29 @@ async def test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "사용 가능한 명령어 목록:\n"
+        "🧾 *사용 가능한 명령어 목록:*\n\n"
+        "📌 _기본 기능_\n"
         "/start - 봇 시작 및 인사\n"
         "/daily - 오늘의 일일 숙제 확인\n"
         "/weekly - 이번 주의 주간 숙제 확인\n"
         "/complete [게임명] [weekly(optional)] - 게임 숙제 일괄 완료 처리\n"
         "/done - 모든 일일 숙제 완료 시 Day 클리어 처리\n"
         "/progress - 오늘의 숙제 진행 상황 확인\n"
-        "/addevent - 대화형으로 이벤트 추가\n"
-        "/event - 진행 중인 이벤트 목록 확인\n"
+        "/listtasks - 전체 게임 및 이벤트 숙제 보기 (D-Day 정렬 포함)\n\n"
+        "📆 _이벤트 관련_\n"
+        "/addevent - 이벤트 추가 (대화형)\n"
+        "/event - 진행 중인 이벤트 목록 보기\n"
+        "/delevent - 이벤트 삭제 (입력형)\n"
+        "/editevent - 이벤트 숙제 이름 수정\n\n"
+        "🛠 _숙제/게임 관리_\n"
         "/addtask - 숙제 항목 추가 (입력형)\n"
         "/deltask - 숙제 항목 삭제 (입력형)\n"
-        "/listtasks - 등록된 게임 및 숙제 목록 보기\n"
-        "/renamegame - 게임 이름 수정 (입력형)\n"
-        "/editquest - 숙제 항목 이름 수정 (입력형)\n"
-        "/help - 이 도움말 메시지 보기\n"
+        "/renamegame - 게임 이름 변경\n"
+        "/editquest - 숙제 이름 수정 (입력형)\n\n"
+        "❓ /help - 이 도움말 보기"
     )
-    await update.message.reply_text(help_text)
+    await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
+
 
 loop = asyncio.new_event_loop()
 
@@ -625,7 +843,9 @@ def main():
     app.add_handler(editquest_handler)
     app.add_handler(addtask_handler)
     app.add_handler(deltask_handler)
-    app.add_handler(conv_handler)
+    app.add_handler(addevent_handler)
+    app.add_handler(delevent_handler)
+    app.add_handler(editevent_handler)
 
     # 전용 이벤트 루프 생성 후 별도 스레드에서 실행
     t = threading.Thread(target=start_loop, args=(loop,), daemon=True)
@@ -651,10 +871,10 @@ def main():
     # 매주 월요일 오전 5시 주간 숙제 초기화
     scheduler.add_job(reset_weekly_tasks, trigger="cron", day_of_week="mon", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
     # 10분 주기 슬립 방지 ping
-    scheduler.add_job(
-    lambda: asyncio.run_coroutine_threadsafe(ping_self(), loop),
-    trigger="interval",
-    minutes=10)
+    scheduler.add_job(lambda: asyncio.run_coroutine_threadsafe(ping_self(), loop), trigger="interval",minutes=10)
+    # 이벤트 만료 및 daily 이벤트 반영
+    scheduler.add_job(lambda: safe_run(notify_once_event_tasks(app)), trigger="cron", hour=8, minute=0, timezone=timezone("Asia/Seoul"))
+    scheduler.add_job(refresh_event_tasks, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
 
     scheduler.start()
 
