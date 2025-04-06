@@ -399,7 +399,7 @@ async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for evt in events:
             evt_name = evt["name"]
             evt_type = evt.get("type", "once")
-            until = datetime.date.fromisoformat(evt["until"])
+            until = date.fromisoformat(evt["until"])
             if today > until:
                 continue  # 종료된 이벤트
             date_key = today.strftime("%Y-%m-%d") if evt_type == "daily" else evt["until"]
@@ -430,7 +430,7 @@ def build_event_keyboard(user_id: int):
         for evt in events:
             evt_name = evt["name"]
             evt_type = evt.get("type", "once")
-            until = datetime.date.fromisoformat(evt["until"])
+            until = date.fromisoformat(evt["until"])
             if today > until:
                 continue
             date_key = today.strftime("%Y-%m-%d") if evt_type == "daily" else evt["until"]
@@ -619,32 +619,39 @@ editquest_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
-# daily 이벤트 반영 및 만료 제거
+# 이벤트 만료 후 제거 + daily type은 daily에 반영 (단 제거는 하지 않음)
 def refresh_event_tasks():
     today = date.today()
     modified = False
     for game, data in QUESTS.items():
         events = data.get("events", [])
         new_events = []
-        daily_from_events = []
+        daily_from_events = set(data.get("daily", []))  # 기존 daily 숙제들
+
         for evt in events:
             until = datetime.fromisoformat(evt["until"]).date()
             if today > until:
-                modified = True  # 이벤트가 끝났으면 제거
+                modified = True  # 만료된 이벤트는 제거
                 continue
+
             for task in evt.get("tasks", []):
-                if task["type"] == "daily" and task["name"] not in data["daily"]:
-                    daily_from_events.append(task["name"])
-                    modified = True
+                if task["type"] == "daily":
+                    task_name = task["name"]
+                    if task_name not in daily_from_events:
+                        daily_from_events.add(task_name)
+                        modified = True
             new_events.append(evt)
+
+        # 중복 없이 업데이트
+        data["daily"] = list(daily_from_events)
         data["events"] = new_events
-        for task_name in daily_from_events:
-            if task_name not in data["daily"]:
-                data["daily"].append(task_name)
+
     if modified:
         with open("data/quests.json", "w", encoding="utf-8") as f:
             json.dump(QUESTS, f, indent=2, ensure_ascii=False)
         print("✅ daily 이벤트 반영 및 만료 제거 완료")
+    else:
+        print("✅ 업데이트 필요 없음")
 
 # 이벤트 알림용 함수
 async def notify_once_event_tasks(app):
