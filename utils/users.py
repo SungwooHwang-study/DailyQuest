@@ -3,7 +3,7 @@ from datetime import datetime
 from tinydb import TinyDB, Query
 
 
-db = TinyDB("data/users.json")
+db = TinyDB("/data/users.json")
 User = Query()
 
 def get_all_users():
