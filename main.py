@@ -406,9 +406,9 @@ async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([InlineKeyboardButton(f"🎉 {game} - {evt_name}", callback_data="noop")])
             row = []
             for task in evt["tasks"]:
-                checked = storage.is_event_checked(user_id, game, evt_name, task, date_key)
+                checked = storage.is_event_checked(user_id, game, evt_name, task["name"], date_key)
                 mark = "✅" if checked else "☐"
-                callback_data = f"event|{game}|{evt_name}|{task}|{date_key}"
+                callback_data = f"event|{game}|{evt_name}|{task['name']}|{date_key}"
                 row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
                 if len(row) == 2:
                     keyboard.append(row)
@@ -437,9 +437,9 @@ def build_event_keyboard(user_id: int):
             keyboard.append([InlineKeyboardButton(f"🎉 {game} - {evt_name}", callback_data="noop")])
             row = []
             for task in evt["tasks"]:
-                checked = storage.is_event_checked(user_id, game, evt_name, task, date_key)
+                checked = storage.is_event_checked(user_id, game, evt_name, task["name"], date_key)
                 mark = "✅" if checked else "☐"
-                callback_data = f"event|{game}|{evt_name}|{task}|{date_key}"
+                callback_data = f"event|{game}|{evt_name}|{task['name']}|{date_key}"
                 row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
                 if len(row) == 2:
                     keyboard.append(row)
