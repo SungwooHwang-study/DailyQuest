@@ -45,7 +45,39 @@ def load_quests():
     global QUESTS
     with open("data/quests.json", "r", encoding="utf-8") as f:
         QUESTS = json.load(f)
-
+    def normalize_quests():
+        global QUESTS
+        modified = False
+        for game, data in QUESTS.items():
+            events = data.get("events", [])
+            new_events = []
+            for evt in events:
+                evt_copy = evt.copy()
+                # 과거 형식에서 "tasks"가 문자열 리스트인 경우
+                if isinstance(evt_copy.get("tasks"), list):
+                    new_tasks = []
+                    for task in evt_copy["tasks"]:
+                        if isinstance(task, str):
+                            new_tasks.append({
+                                "name": task,
+                                "type": "once"  # 기본값
+                            })
+                            modified = True
+                        elif isinstance(task, dict):
+                            if "name" in task:
+                                if "type" not in task:
+                                    task["type"] = "once"
+                                    modified = True
+                                new_tasks.append(task)
+                    evt_copy["tasks"] = new_tasks
+                new_events.append(evt_copy)
+            data["events"] = new_events
+        if modified:
+            with open("data/quests.json", "w", encoding="utf-8") as f:
+                json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+            print("🔧 quests.json 자동 정규화 완료됨.")
+    normalize_quests()        
+    
 # 초기화 작업: 일일 숙제 리셋
 def reset_daily_tasks():
     # "daily" 기간에 해당하는 모든 기록 삭제
