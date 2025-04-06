@@ -834,10 +834,25 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/deltask - 숙제 항목 삭제 (입력형)\n"
         "/renamegame - 게임 이름 변경\n"
         "/editquest - 숙제 이름 수정 (입력형)\n\n"
+        "/importquests - 로컬의 quests.json 파일을 첨부해 업로드\n"
         "❓ /help - 이 도움말 보기"
     )
     await update.message.reply_text(help_text, parse_mode=ParseMode.MARKDOWN)
 
+async def import_quests(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.document:
+        await update.message.reply_text("📎 *quests.json* 파일을 첨부해서 `/importquests` 명령어로 보내주세요.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    file = await context.bot.get_file(update.message.document.file_id)
+    file_path = "/data/quests.json"
+    try:
+        await file.download_to_drive(file_path)
+        await update.message.reply_text("✅ *quests.json*이 성공적으로 덮어씌워졌습니다!", parse_mode=ParseMode.MARKDOWN)
+        # 새로 불러오기
+        load_quests()
+    except Exception as e:
+        await update.message.reply_text(f"❌ 파일 저장 실패: {e}")
 
 loop = asyncio.new_event_loop()
 
@@ -872,6 +887,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("test", test_notify))
     app.add_handler(CommandHandler("listtasks", listtasks))
+    app.add_handler(MessageHandler(filters.Document.ALL & filters.CaptionRegex(r"^/importquests$"), import_quests))
     app.add_handler(renamegame_handler)
     app.add_handler(editquest_handler)
     app.add_handler(addtask_handler)
