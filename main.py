@@ -735,12 +735,6 @@ editevent_handler = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
-# D-day
-dday = (until - today).days
-keyboard.append([
-    InlineKeyboardButton(f"🎉 {game} - {evt_name} (D-{dday})", callback_data="noop")
-])
-
 # 숙제 목록 출력
 async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.today().date()
