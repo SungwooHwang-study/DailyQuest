@@ -343,28 +343,11 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     all_completed = True
 
     for game, data in QUESTS.items():
-        all_tasks = set(data.get("daily", []))
-
-        # 이벤트에서 daily 타입 숙제 포함
-        for evt in data.get("events", []):
-            until = datetime.fromisoformat(evt["until"]).date()
-            if until >= today:
-                for task in evt.get("tasks", []):
-                    if task["type"] == "daily":
-                        all_tasks.add((evt["name"], task["name"]))  # (이벤트명, 과제명)
-        
-        for task in all_tasks:
-            if isinstance(task, tuple):
-                evt_name, task_name = task
-                date_key = today.strftime("%Y-%m-%d")
-                if not storage.is_event_checked(user_id, game, evt_name, task_name, date_key):
-                    all_completed = False
-                    break
-            else:
-                if not storage.is_checked(user_id, game, task, period="daily"):
-                    all_completed = False
-                    break
-
+        # 일반 daily 숙제만 확인 (이벤트는 이미 daily에 병합됨)
+        for task in data.get("daily", []):
+            if not storage.is_checked(user_id, game, task, period="daily"):
+                all_completed = False
+                break
         if not all_completed:
             break
 
@@ -373,7 +356,6 @@ async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"🎉 오늘의 숙제를 모두 완료했습니다!\n🔥 Day {day_n} 클리어!")
     else:
         await update.message.reply_text("🧐 아직 완료되지 않은 숙제가 있어요.\n이벤트 숙제도 포함해서 모두 완료해야 Day 카운트가 올라가요!")
-
 
 async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
