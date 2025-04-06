@@ -409,7 +409,7 @@ async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 checked = storage.is_event_checked(user_id, game, evt_name, task["name"], date_key)
                 mark = "✅" if checked else "☐"
                 callback_data = f"event|{game}|{evt_name}|{task['name']}|{date_key}"
-                row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
+                row.append(InlineKeyboardButton(f"{mark} {task['name']}", callback_data=callback_data))
                 if len(row) == 2:
                     keyboard.append(row)
                     row = []
@@ -440,7 +440,7 @@ def build_event_keyboard(user_id: int):
                 checked = storage.is_event_checked(user_id, game, evt_name, task["name"], date_key)
                 mark = "✅" if checked else "☐"
                 callback_data = f"event|{game}|{evt_name}|{task['name']}|{date_key}"
-                row.append(InlineKeyboardButton(f"{mark} {task}", callback_data=callback_data))
+                row.append(InlineKeyboardButton(f"{mark} {task['name']}", callback_data=callback_data))
                 if len(row) == 2:
                     keyboard.append(row)
                     row = []
@@ -643,8 +643,8 @@ def refresh_event_tasks():
             new_events.append(evt)
 
         # 중복 없이 업데이트
-        data["daily"] = list(daily_from_events)
-        data["events"] = new_events
+        original_daily = set(data.get("daily", []))
+        data["daily"] = list(original_daily.union(daily_from_events))
 
     if modified:
         with open("data/quests.json", "w", encoding="utf-8") as f:
@@ -812,6 +812,7 @@ async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    refresh_event_tasks()
     await update.message.reply_text("📨 테스트 알림을 전송합니다.")
     await send_daily_to_all_users(context.application)
 
