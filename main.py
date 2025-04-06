@@ -813,6 +813,14 @@ async def test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📨 테스트 알림을 전송합니다.")
     await send_daily_to_all_users(context.application)
 
+def backup_quests():
+    try:
+        import shutil
+        shutil.copyfile("/data/quests.json", "/data/quests.json.bak")
+        print("📦 quests.json 백업 완료")
+    except Exception as e:
+        print(f"[백업 실패] {e}")
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🧾 *사용 가능한 명령어 목록:*\n\n"
@@ -924,6 +932,9 @@ def main():
     # 이벤트 만료 및 daily 이벤트 반영
     scheduler.add_job(lambda: safe_run(notify_once_event_tasks(app)), trigger="cron", hour=8, minute=0, timezone=timezone("Asia/Seoul"))
     scheduler.add_job(refresh_event_tasks, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
+
+    # 매일 오전 5시 quests.json 백업
+    scheduler.add_job(backup_quests, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
 
     scheduler.start()
 
