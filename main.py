@@ -15,7 +15,16 @@ from utils import users, storage
 print(timezone("Asia/Seoul"))
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-QUESTS = {}
+
+if not BOT_TOKEN:
+    raise EnvironmentError("❌ TELEGRAM_BOT_TOKEN 환경변수가 설정되지 않았습니다.")
+
+SELF_URL = os.getenv("SELF_URL")
+
+if not SELF_URL:
+    print("⚠️ SELF_URL 환경변수가 설정되지 않아 슬립 방지 ping이 비활성화됩니다.")
+
+QUESTS_PATH = "/data/quests.json"
 
 async def handle_ping(request):
     return web.Response(text="pong")
@@ -43,7 +52,13 @@ async def ping_self():
 
 def load_quests():
     global QUESTS
-    with open("data/quests.json", "r", encoding="utf-8") as f:
+    os.makedirs("/data", exist_ok=True)  # 경로 없으면 생성
+    if not os.path.exists(QUESTS_PATH):
+        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
+            json.dump({}, f, indent=2, ensure_ascii=False)
+        print("📁 최초 실행: 빈 quests.json 생성")
+
+    with open(QUESTS_PATH, "r", encoding="utf-8") as f:
         QUESTS = json.load(f)
 
     def normalize_quests():
@@ -71,15 +86,15 @@ def load_quests():
             data["events"] = new_events
 
         if modified:
-            with open("data/quests.json", "w", encoding="utf-8") as f:
+            with open(QUESTS_PATH, "w", encoding="utf-8") as f:
                 json.dump(QUESTS, f, indent=2, ensure_ascii=False)
             print("🔧 quests.json 자동 정규화 완료됨.")
         else:
             print("✅ quests.json 정규화 불필요 — 모든 항목에 type 있음")
 
     normalize_quests()
-    with open("data/quests.json", "r", encoding="utf-8") as f:
-        QUESTS = json.load(f)  
+    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
 
 # 초기화 작업: 일일 숙제 리셋
 def reset_daily_tasks():
@@ -220,7 +235,7 @@ async def addtask_save(update, context):
     tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
     game, period = add_data["game"], add_data["period"]
     QUESTS[game].setdefault(period, []).extend(t for t in tasks if t not in QUESTS[game][period])
-    with open("data/quests.json", "w", encoding="utf-8") as f:
+    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
     await update.message.reply_text(f"✅ '{game}'의 {period} 숙제에 항목을 추가했습니다!")
     return ConversationHandler.END
@@ -251,7 +266,7 @@ async def deltask_save(update, context):
     tasks = [t.strip() for t in update.message.text.split(",") if t.strip()]
     game, period = del_data["game"], del_data["period"]
     QUESTS[game][period] = [t for t in QUESTS[game].get(period, []) if t not in tasks]
-    with open("data/quests.json", "w", encoding="utf-8") as f:
+    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
     await update.message.reply_text(f"🗑️ '{game}'의 {period} 숙제에서 항목을 삭제했습니다!")
     return ConversationHandler.END
@@ -490,7 +505,7 @@ async def save_event_or_continue(update: Update, context: ContextTypes.DEFAULT_T
             "tasks": event_data["tasks"]
         }
         QUESTS[game].setdefault("events", []).append(new_event)
-        with open("data/quests.json", "w", encoding="utf-8") as f:
+        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
             json.dump(QUESTS, f, indent=2, ensure_ascii=False)
         await update.message.reply_text(f"✅ 이벤트가 추가되었습니다!\n📌 {event_data['name']} ({len(event_data['tasks'])}개 숙제)")
         return ConversationHandler.END
@@ -531,7 +546,7 @@ async def renamegame_apply(update, context):
     new_name = update.message.text.strip()
     old_name = rename_data["old"]
     QUESTS[new_name] = QUESTS.pop(old_name)
-    with open("data/quests.json", "w", encoding="utf-8") as f:
+    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
     await update.message.reply_text(f"✅ '{old_name}' → '{new_name}' 로 이름이 변경되었습니다.")
     return ConversationHandler.END
@@ -576,7 +591,7 @@ async def editquest_apply(update, context):
     game, period, old = edit_data["game"], edit_data["period"], edit_data["old"]
     tasks = QUESTS[game][period]
     QUESTS[game][period] = [new_task if t == old else t for t in tasks]
-    with open("data/quests.json", "w", encoding="utf-8") as f:
+    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
     await update.message.reply_text(f"✅ '{old}' → '{new_task}' 로 숙제명이 수정되었습니다!")
     return ConversationHandler.END
@@ -629,7 +644,7 @@ def refresh_event_tasks():
         data["daily"] = list(original_daily.union(daily_from_events))
 
     if modified:
-        with open("data/quests.json", "w", encoding="utf-8") as f:
+        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
             json.dump(QUESTS, f, indent=2, ensure_ascii=False)
         print("✅ daily 이벤트 반영 및 만료 제거 완료")
     else:
@@ -683,7 +698,7 @@ async def delevent_confirm(update, context):
     if before_count == after_count:
         await update.message.reply_text("❗ 해당 이벤트를 찾을 수 없습니다.")
     else:
-        with open("data/quests.json", "w", encoding="utf-8") as f:
+        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
             json.dump(QUESTS, f, indent=2, ensure_ascii=False)
         await update.message.reply_text(f"✅ '{evt_name}' 이벤트가 삭제되었습니다.")
     return ConversationHandler.END
@@ -742,7 +757,7 @@ async def editevent_new_task(update, context):
 async def editevent_apply(update, context):
     new_name = update.message.text.strip()
     edit_event_data["old_task"]["name"] = new_name
-    with open("data/quests.json", "w", encoding="utf-8") as f:
+    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
         json.dump(QUESTS, f, indent=2, ensure_ascii=False)
     await update.message.reply_text("✅ 숙제명이 수정되었습니다.")
     return ConversationHandler.END

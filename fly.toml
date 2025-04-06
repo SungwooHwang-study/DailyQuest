@@ -21,3 +21,7 @@ primary_region = "nrt"
   [[services.ports]]
     port = 443
     handlers = ["tls", "http"]
+
+[mounts]
+source = "data_volume"
+destination = "/data"
