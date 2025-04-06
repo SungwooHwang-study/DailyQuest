@@ -1,11 +1,10 @@
 import os
 import json
-import datetime
 import asyncio
 import threading
 import aiohttp
 from aiohttp import web
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pytz import timezone
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
@@ -305,7 +304,7 @@ async def complete(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
-    today = datetime.today().date()
+    today = date.today()
     all_completed = True
 
     for game, data in QUESTS.items():
@@ -358,7 +357,7 @@ async def progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add_user(user_id)
-    today = datetime.date.today()
+    today = date.today()
     keyboard = []
     for game, data in QUESTS.items():
         events = data.get("events", [])
@@ -390,7 +389,7 @@ async def event(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def build_event_keyboard(user_id: int):
     # 이벤트 목록을 다시 빌드하는 함수
     keyboard = []
-    today = datetime.date.today()
+    today = date.today()
     for game, data in QUESTS.items():
         events = data.get("events", [])
         for evt in events:
@@ -587,7 +586,7 @@ editquest_handler = ConversationHandler(
 
 # daily 이벤트 반영 및 만료 제거
 def refresh_event_tasks():
-    today = datetime.today().date()
+    today = date.today()
     modified = False
     for game, data in QUESTS.items():
         events = data.get("events", [])
@@ -614,7 +613,7 @@ def refresh_event_tasks():
 
 # 이벤트 알림용 함수
 async def notify_once_event_tasks(app):
-    today = datetime.today().date()
+    today = date.today()
     tomorrow = today + timedelta(days=1)
     for user_id in users.get_all_users():
         try:
@@ -737,7 +736,7 @@ editevent_handler = ConversationHandler(
 
 # 숙제 목록 출력
 async def listtasks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    today = datetime.today().date()
+    today = date.today()
     msg = "📋 현재 등록된 숙제 목록입니다:\n"
 
     # 기본 숙제 출력
