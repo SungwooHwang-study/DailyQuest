@@ -59,16 +59,17 @@ def remove_check(user_id: int, game: str, task: str, period: str = "daily"):
               (User.game == game) &
               (User.task == task))
 
-def complete_all(user_id: int, game: str, tasks: list[str], period: str = "daily"):
+def complete_all(user_id: int, game: str, tasks: list, period: str = "daily"):
     key = get_today() if period == "daily" else get_week_key()
     for task in tasks:
-        if not is_checked(user_id, game, task, period):
+        task_name = normalize_task(task)
+        if not is_checked(user_id, game, task_name, period):
             db.insert({
                 "user_id": user_id,
                 "period": period,
                 "date": key,
                 "game": game,
-                "task": task
+                "task": task_name
             })
 
 def is_event_checked(user_id: int, game: str, event: str, task: str, date: str):
