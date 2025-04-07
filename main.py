@@ -821,6 +821,14 @@ def backup_quests():
     except Exception as e:
         print(f"[백업 실패] {e}")
 
+def backup_checklist():
+    try:
+        import shutil
+        shutil.copyfile("/data/checklist.json", "/data/checklist.json.bak")
+        print("📦 checklist.json 백업 완료")
+    except Exception as e:
+        print(f"[checklist 백업 실패] {e}")
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🧾 *사용 가능한 명령어 목록:*\n\n"
@@ -935,6 +943,9 @@ def main():
 
     # 매일 오전 5시 quests.json 백업
     scheduler.add_job(backup_quests, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
+
+    # 매일 오전 5시 checklist.json 백업
+    scheduler.add_job(backup_checklist, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
 
     scheduler.start()
 
