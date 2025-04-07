@@ -154,8 +154,9 @@ def build_daily_keyboard(user_id: int):
         keyboard.append([InlineKeyboardButton(f"🎮 {game}", callback_data="noop")])
         row = []
         for task in daily_tasks:
-            if not isinstance(task, str):  # ✅ 문자열이 아닌 경우 건너뜀
-                print(f"[경고] ❌ 무시된 task (string 아님): {task}, type={type(task)}")
+            print(f"[디버그] task={task}, type={type(task)}")  # 추가!
+            if not isinstance(task, str):  # ✅ 문자열이 아니면 무시
+                print(f"[경고] ❌ 무시된 task: {task}, type={type(task)}")
                 continue
 
             checked = storage.is_checked(user_id, game, task)
