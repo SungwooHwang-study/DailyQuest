@@ -4,6 +4,8 @@ from datetime import datetime
 import json
 import os
 
+CHECKLIST_PATH = "/data/checklist.json"
+
 # 깨짐 방지용 초기화
 if not os.path.exists(CHECKLIST_PATH):
     with open(CHECKLIST_PATH, "w", encoding="utf-8") as f:
@@ -16,7 +18,6 @@ except Exception as e:
     # 백업본이 있다면 복구하는 로직을 여기에 넣을 수 있음
     raise
 
-db = TinyDB("/data/checklist.json")
 User = Query()
 
 def get_today():
