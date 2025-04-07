@@ -10,6 +10,9 @@ CHECKLIST_PATH = "/data/checklist.json"
 db = load_or_restore_db(CHECKLIST_PATH)
 User = Query()
 
+def normalize_task(task):
+    return task["name"] if isinstance(task, dict) else task
+
 def get_today():
     return datetime.now().strftime("%Y-%m-%d")
 
@@ -23,7 +26,8 @@ def get_week_key():
     week_num = get_week_of_month(now)
     return now.strftime(f"%m-W{week_num}")
 
-def is_checked(user_id: int, game: str, task: str, period: str = "daily") -> bool:
+def is_checked(user_id: int, game: str, task, period: str = "daily") -> bool:
+    task = normalize_task(task)
     key = get_today() if period == "daily" else get_week_key()
     result = db.search((User.user_id == user_id) &
                        (User.date == key) &
