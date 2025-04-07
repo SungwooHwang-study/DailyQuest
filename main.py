@@ -52,10 +52,32 @@ async def ping_self():
     except Exception as e:
         print(f"[슬립방지 ping 실패] {e}")
 
+def load_quests():
+    global QUESTS
+    os.makedirs("/data", exist_ok=True)
+
+    # quests.json 복원 또는 로드
+    try:
+        load_or_restore_db(QUESTS_PATH)  # 복구만 시도
+    except Exception as e:
+        print(f"⚠️ quests.json 복구 시도 실패: {e}")
+
+    try:
+        with open(QUESTS_PATH, "r", encoding="utf-8") as f:
+            QUESTS = json.load(f)
+        if not isinstance(QUESTS, dict):
+            raise ValueError("quests.json이 딕셔너리 형태가 아닙니다.")
+        print("✅ quests.json 로드 성공")
+    except Exception as e:
+        print(f"❌ quests.json 로드 실패: {e}")
+        QUESTS = {}
+
 def normalize_quests():
     global QUESTS
     modified = False
+
     for game, data in QUESTS.items():
+        # 이벤트 정규화
         events = data.get("events", [])
         new_events = []
         for evt in events:
@@ -76,39 +98,7 @@ def normalize_quests():
             new_events.append(evt_copy)
         data["events"] = new_events
 
-    if modified:
-        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
-            json.dump(QUESTS, f, indent=2, ensure_ascii=False)
-        print("🔧 quests.json 자동 정규화 완료됨.")
-    else:
-        print("✅ quests.json 정규화 불필요 — 모든 항목에 type 있음")
-
-def load_quests():
-    global QUESTS
-    os.makedirs("/data", exist_ok=True)
-
-    # quests.json 복원 또는 로드
-    try:
-        load_or_restore_db(QUESTS_PATH)  # 복구만 하고 반환된 TinyDB는 사용하지 않음
-    except Exception as e:
-        print(f"⚠️ quests.json 복구 시도 실패: {e}")
-    # quests.json 로드
-    try:
-        with open(QUESTS_PATH, "r", encoding="utf-8") as f:
-            QUESTS = json.load(f)
-        if not isinstance(QUESTS, dict):
-            raise ValueError("quests.json이 딕셔너리 형태가 아닙니다.")
-        print("✅ quests.json 로드 성공")
-    except Exception as e:
-        print(f"❌ quests.json 로드 실패: {e}")
-        QUESTS = {}
-
-    normalize_quests()
-
-def normalize_daily_tasks():
-    global QUESTS
-    modified = False
-    for game, data in QUESTS.items():
+        # ✅ daily 정규화 추가
         daily = data.get("daily", [])
         new_daily = []
         for task in daily:
@@ -122,9 +112,10 @@ def normalize_daily_tasks():
     if modified:
         with open(QUESTS_PATH, "w", encoding="utf-8") as f:
             json.dump(QUESTS, f, indent=2, ensure_ascii=False)
-        print("🔧 daily 숙제 목록 정규화 완료됨.")
+        print("🔧 quests.json 자동 정규화 완료됨.")
     else:
-        print("✅ daily 숙제 목록 정규화 불필요")
+        print("✅ quests.json 정규화 불필요")
+
 
 # 초기화 작업: 일일 숙제 리셋
 def reset_daily_tasks():
@@ -917,9 +908,9 @@ async def import_quests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_path = "/data/quests.json"
     try:
         await file.download_to_drive(file_path)
+        load_quests()  # ✅ 여기에만 있으면 안 됨
+        normalize_quests()  # ✅ 강제 정규화 필요
         await update.message.reply_text("✅ *quests.json*이 성공적으로 덮어씌워졌습니다!", parse_mode=ParseMode.MARKDOWN)
-        # 새로 불러오기
-        load_quests()
     except Exception as e:
         await update.message.reply_text(f"❌ 파일 저장 실패: {e}")
 
@@ -942,7 +933,7 @@ def start_loop(loop):
 
 def main():
     load_quests()
-    normalize_daily_tasks()
+    normalize_quests()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     # 핸들러 등록
