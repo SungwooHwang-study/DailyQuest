@@ -154,6 +154,10 @@ def build_daily_keyboard(user_id: int):
         keyboard.append([InlineKeyboardButton(f"🎮 {game}", callback_data="noop")])
         row = []
         for task in daily_tasks:
+            if not isinstance(task, str):  # ✅ 문자열이 아닌 경우 건너뜀
+                print(f"[경고] ❌ 무시된 task (string 아님): {task}, type={type(task)}")
+                continue
+
             checked = storage.is_checked(user_id, game, task)
             checkmark = "✅" if checked else "☐"
             btn_text = f"{checkmark} {task}"
@@ -166,6 +170,7 @@ def build_daily_keyboard(user_id: int):
         if row:
             keyboard.append(row)
     return InlineKeyboardMarkup(keyboard)
+
 
 async def send_daily_to_all_users(app):
     from telegram.constants import ParseMode
