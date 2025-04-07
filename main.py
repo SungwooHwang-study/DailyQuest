@@ -6,7 +6,7 @@ import aiohttp
 from aiohttp import web
 from datetime import datetime, timedelta, date
 from pytz import timezone
-from utils.backup import rolling_backup, cleanup_old_backups
+from utils.backup import rolling_backup, cleanup_old_backups, load_or_restore_db
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
@@ -960,7 +960,7 @@ def main():
 
     # 매일 오전 5시 checklist.json 백업
     scheduler.add_job(backup_checklist, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
-    
+
     # 매일 오전 5시 users.json 백업
     scheduler.add_job(backup_users, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
 
