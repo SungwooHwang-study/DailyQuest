@@ -1,9 +1,9 @@
 # utils/users.py
 from datetime import datetime
 from tinydb import TinyDB, Query
+from utils.backup import load_or_restore_db
 
-
-db = TinyDB("/data/users.json")
+db = load_or_restore_db("/data/users.json")
 User = Query()
 
 def get_all_users():
@@ -19,7 +19,7 @@ def add_user(user_id: int):
 
 def get_day_streak(user_id: int):
     result = db.search(User.user_id == user_id)
-    if result:
+    if result and isinstance(result[0], dict):
         return result[0].get("day_streak", 0)
     return 0
 

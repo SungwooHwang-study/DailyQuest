@@ -6,6 +6,7 @@ import aiohttp
 from aiohttp import web
 from datetime import datetime, timedelta, date
 from pytz import timezone
+from utils.backup import rolling_backup, cleanup_old_backups
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
@@ -50,51 +51,53 @@ async def ping_self():
     except Exception as e:
         print(f"[슬립방지 ping 실패] {e}")
 
+def normalize_quests():
+    global QUESTS
+    modified = False
+    for game, data in QUESTS.items():
+        events = data.get("events", [])
+        new_events = []
+        for evt in events:
+            evt_copy = evt.copy()
+            if isinstance(evt_copy.get("tasks"), list):
+                new_tasks = []
+                for task in evt_copy["tasks"]:
+                    if isinstance(task, str):
+                        new_tasks.append({"name": task, "type": "once"})
+                        modified = True
+                    elif isinstance(task, dict):
+                        if "name" in task:
+                            if "type" not in task:
+                                task["type"] = "once"
+                                modified = True
+                            new_tasks.append(task)
+                evt_copy["tasks"] = new_tasks
+            new_events.append(evt_copy)
+        data["events"] = new_events
+
+    if modified:
+        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+        print("🔧 quests.json 자동 정규화 완료됨.")
+    else:
+        print("✅ quests.json 정규화 불필요 — 모든 항목에 type 있음")
+
 def load_quests():
     global QUESTS
-    os.makedirs("/data", exist_ok=True)  # 경로 없으면 생성
-    if not os.path.exists(QUESTS_PATH):
-        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
-            json.dump({}, f, indent=2, ensure_ascii=False)
-        print("📁 최초 실행: 빈 quests.json 생성")
+    os.makedirs("/data", exist_ok=True)
 
-    with open(QUESTS_PATH, "r", encoding="utf-8") as f:
-        QUESTS = json.load(f)
-
-    def normalize_quests():
-        global QUESTS
-        modified = False
-        for game, data in QUESTS.items():
-            events = data.get("events", [])
-            new_events = []
-            for evt in events:
-                evt_copy = evt.copy()
-                if isinstance(evt_copy.get("tasks"), list):
-                    new_tasks = []
-                    for task in evt_copy["tasks"]:
-                        if isinstance(task, str):
-                            new_tasks.append({"name": task, "type": "once"})
-                            modified = True
-                        elif isinstance(task, dict):
-                            if "name" in task:
-                                if "type" not in task:
-                                    task["type"] = "once"
-                                    modified = True
-                                new_tasks.append(task)
-                    evt_copy["tasks"] = new_tasks
-                new_events.append(evt_copy)
-            data["events"] = new_events
-
-        if modified:
-            with open(QUESTS_PATH, "w", encoding="utf-8") as f:
-                json.dump(QUESTS, f, indent=2, ensure_ascii=False)
-            print("🔧 quests.json 자동 정규화 완료됨.")
-        else:
-            print("✅ quests.json 정규화 불필요 — 모든 항목에 type 있음")
+    # quests.json 복원 또는 로드
+    try:
+        db = load_or_restore_db(QUESTS_PATH)
+        # TinyDB 말고 일반 json이니까 직접 파일을 열어서 로딩
+        with open(QUESTS_PATH, "r", encoding="utf-8") as f:
+            QUESTS = json.load(f)
+        print("✅ quests.json 로드 성공")
+    except Exception as e:
+        print(f"❌ quests.json 로드 실패: {e}")
+        QUESTS = {}
 
     normalize_quests()
-    with open(QUESTS_PATH, "w", encoding="utf-8") as f:
-        json.dump(QUESTS, f, indent=2, ensure_ascii=False)
 
 # 초기화 작업: 일일 숙제 리셋
 def reset_daily_tasks():
@@ -813,22 +816,33 @@ async def test_notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📨 테스트 알림을 전송합니다.")
     await send_daily_to_all_users(context.application)
 
+# 백업 함수
+
 def backup_quests():
     try:
-        import shutil
-        shutil.copyfile("/data/quests.json", "/data/quests.json.bak")
+        rolling_backup("/data/quests.json")
+        cleanup_old_backups("/data")
         print("📦 quests.json 백업 완료")
     except Exception as e:
         print(f"[백업 실패] {e}")
 
 def backup_checklist():
     try:
-        import shutil
-        shutil.copyfile("/data/checklist.json", "/data/checklist.json.bak")
+        rolling_backup("/data/checklist.json")
+        cleanup_old_backups("/data")
         print("📦 checklist.json 백업 완료")
     except Exception as e:
         print(f"[checklist 백업 실패] {e}")
 
+def backup_users():
+    try:
+        rolling_backup("/data/users.json")
+        cleanup_old_backups("/data")
+        print("📦 users.json 백업 완료")
+    except Exception as e:
+        print(f"[users 백업 실패] {e}")
+
+# help 명령어
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🧾 *사용 가능한 명령어 목록:*\n\n"
@@ -946,6 +960,10 @@ def main():
 
     # 매일 오전 5시 checklist.json 백업
     scheduler.add_job(backup_checklist, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
+    
+    # 매일 오전 5시 users.json 백업
+    scheduler.add_job(backup_users, trigger="cron", hour=5, minute=0, timezone=timezone("Asia/Seoul"))
+
 
     scheduler.start()
 

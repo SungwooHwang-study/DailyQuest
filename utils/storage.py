@@ -1,23 +1,13 @@
 # utils/storage.py
 from tinydb import TinyDB, Query
 from datetime import datetime
-import json
+from utils.backup import load_or_restore_db
 import os
 
 CHECKLIST_PATH = "/data/checklist.json"
 
-# 깨짐 방지용 초기화
-if not os.path.exists(CHECKLIST_PATH):
-    with open(CHECKLIST_PATH, "w", encoding="utf-8") as f:
-        json.dump([], f)  # TinyDB는 리스트 기반
-
-try:
-    db = TinyDB(CHECKLIST_PATH)
-except Exception as e:
-    print(f"[ERROR] checklist.json 로드 실패: {e}")
-    # 백업본이 있다면 복구하는 로직을 여기에 넣을 수 있음
-    raise
-
+# checklist.json 복원 또는 새로 로드
+db = load_or_restore_db(CHECKLIST_PATH)
 User = Query()
 
 def get_today():
