@@ -105,6 +105,27 @@ def load_quests():
 
     normalize_quests()
 
+def normalize_daily_tasks():
+    global QUESTS
+    modified = False
+    for game, data in QUESTS.items():
+        daily = data.get("daily", [])
+        new_daily = []
+        for task in daily:
+            if isinstance(task, str):
+                new_daily.append(task)
+            elif isinstance(task, dict) and "name" in task:
+                new_daily.append(task["name"])
+                modified = True
+        data["daily"] = new_daily
+
+    if modified:
+        with open(QUESTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(QUESTS, f, indent=2, ensure_ascii=False)
+        print("🔧 daily 숙제 목록 정규화 완료됨.")
+    else:
+        print("✅ daily 숙제 목록 정규화 불필요")
+
 # 초기화 작업: 일일 숙제 리셋
 def reset_daily_tasks():
     # "daily" 기간에 해당하는 모든 기록 삭제
@@ -155,8 +176,8 @@ def build_daily_keyboard(user_id: int):
         row = []
         for task in daily_tasks:
             try:
-                task_name = normalize_task(task)
-                checked = storage.is_checked(user_id, game, task_name)
+                task_name = normalize_task(task)  # dict or str 구분해서 처리
+                checked = storage.is_checked(user_id, game, task_name)  # ⬅ 이걸로 고쳐야 함
                 checkmark = "✅" if checked else "☐"
                 btn_text = f"{checkmark} {task_name}"
                 callback_data = f"{game}|{task_name}"
@@ -921,6 +942,7 @@ def start_loop(loop):
 
 def main():
     load_quests()
+    normalize_daily_tasks()
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     # 핸들러 등록
