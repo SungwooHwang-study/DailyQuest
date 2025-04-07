@@ -88,10 +88,15 @@ def load_quests():
 
     # quests.json 복원 또는 로드
     try:
-        db = load_or_restore_db(QUESTS_PATH)
-        # TinyDB 말고 일반 json이니까 직접 파일을 열어서 로딩
+        load_or_restore_db(QUESTS_PATH)  # 복구만 하고 반환된 TinyDB는 사용하지 않음
+    except Exception as e:
+        print(f"⚠️ quests.json 복구 시도 실패: {e}")
+    # quests.json 로드
+    try:
         with open(QUESTS_PATH, "r", encoding="utf-8") as f:
             QUESTS = json.load(f)
+        if not isinstance(QUESTS, dict):
+            raise ValueError("quests.json이 딕셔너리 형태가 아닙니다.")
         print("✅ quests.json 로드 성공")
     except Exception as e:
         print(f"❌ quests.json 로드 실패: {e}")
