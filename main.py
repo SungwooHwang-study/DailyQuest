@@ -7,6 +7,7 @@ from aiohttp import web
 from datetime import datetime, timedelta, date
 from pytz import timezone
 from utils.backup import rolling_backup, cleanup_old_backups, load_or_restore_db
+from utils.storage import normalize_task
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes, ConversationHandler, MessageHandler, filters
@@ -140,47 +141,34 @@ def get_week_of_month(date: datetime.date):
 
 def build_daily_keyboard(user_id: int):
     keyboard = []
+
     print("[디버그] QUESTS 구조 확인")
     print(type(QUESTS))
     for game, tasks in QUESTS.items():
-        print(f"- {game}: {type(tasks)}")
+        print(f"  - {game}: {type(tasks)}")
 
     for game, tasks in QUESTS.items():
         daily_tasks = tasks.get("daily", [])
         if not daily_tasks:
             continue
-
         keyboard.append([InlineKeyboardButton(f"🎮 {game}", callback_data="noop")])
         row = []
         for task in daily_tasks:
-            print(f"[디버그] task={task}, type={type(task)}")
-            if not isinstance(task, str):
-                print(f"[경고] ❌ 무시된 task: {task}, type={type(task)}")
-                continue
-
             try:
-                checked = storage.is_checked(user_id, game, task)
+                task_name = normalize_task(task)
+                checked = storage.is_checked(user_id, game, task_name)
                 checkmark = "✅" if checked else "☐"
-                btn_text = f"{checkmark} {task}"
-                callback_data = f"{game}|{task}"
-                btn = InlineKeyboardButton(btn_text, callback_data=callback_data)
-                row.append(btn)
-                print(f"[버튼 생성 성공] {btn}")
+                btn_text = f"{checkmark} {task_name}"
+                callback_data = f"{game}|{task_name}"
+                print(f"[버튼 생성] game={game}, task={task_name}, callback_data={callback_data}, type={type(task)}")
+                row.append(InlineKeyboardButton(btn_text, callback_data=callback_data))
+                if len(row) == 2:
+                    keyboard.append(row)
+                    row = []
             except Exception as e:
                 print(f"[버튼 생성 실패] game={game}, task={task}, 오류={e}")
-                continue
-
-            if len(row) == 2:
-                keyboard.append(row)
-                row = []
         if row:
             keyboard.append(row)
-
-    # 추가 확인: 최종 키보드 구조 확인
-    print("[디버그] 최종 keyboard 구조:")
-    for i, row in enumerate(keyboard):
-        print(f"  Row {i}: {[type(b) for b in row]}")
-
     return InlineKeyboardMarkup(keyboard)
 
 
