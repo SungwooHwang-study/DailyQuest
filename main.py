@@ -931,15 +931,7 @@ def start_loop(loop):
     asyncio.set_event_loop(loop)
     loop.run_forever()
 
-def main():
-    # 기존 코드 시작 전 검사
-    for path in ["/data/checklist.json", "/data/users.json", "/data/quests.json"]:
-        try:
-            os.remove(path)
-            print(f"✅ {path} 삭제 완료")
-        except Exception as e:
-            print(f"⚠️ {path} 삭제 실패 또는 파일 없음: {e}")
-            
+def main():           
     load_quests()
     normalize_quests()
     app = ApplicationBuilder().token(BOT_TOKEN).build()

@@ -1,3 +1,12 @@
+import os
+
+for path in ["/data/checklist.json", "/data/users.json", "/data/quests.json"]:
+    try:
+        os.remove(path)
+        print(f"✅ 즉시 삭제 완료: {path}")
+    except Exception as e:
+        print(f"⚠️ 즉시 삭제 실패: {path}: {e}")
+
 # utils/storage.py
 from tinydb import TinyDB, Query
 from datetime import datetime
