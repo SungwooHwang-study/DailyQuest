@@ -154,10 +154,10 @@ def get_week_of_month(date: datetime.date):
 def build_daily_keyboard(user_id: int):
     keyboard = []
 
-    print("[디버그] QUESTS 구조 확인")
-    print(type(QUESTS))
-    for game, tasks in QUESTS.items():
-        print(f"  - {game}: {type(tasks)}")
+    # print("[디버그] QUESTS 구조 확인")
+    # print(type(QUESTS))
+    # for game, tasks in QUESTS.items():
+    #     print(f"  - {game}: {type(tasks)}")
 
     for game, tasks in QUESTS.items():
         daily_tasks = tasks.get("daily", [])
