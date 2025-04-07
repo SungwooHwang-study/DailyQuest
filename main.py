@@ -933,18 +933,12 @@ def start_loop(loop):
 
 def main():
     # 기존 코드 시작 전 검사
-    for path in ["/data/checklist.json", "/data/quests.json", "/data/users.json"]:
+    for path in ["/data/checklist.json", "/data/users.json", "/data/quests.json"]:
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                content = json.load(f)
-                if isinstance(content, list):
-                    print(f"❌ {path} 는 리스트 형식입니다! TinyDB에서는 사용할 수 없습니다.")
-                elif isinstance(content, dict):
-                    print(f"✅ {path} 는 딕셔너리 형식입니다.")
-                else:
-                    print(f"⚠️ {path} 는 예상 외의 형식입니다: {type(content)}")
+            os.remove(path)
+            print(f"✅ {path} 삭제 완료")
         except Exception as e:
-            print(f"🚨 {path} 로드 실패: {e}")
+            print(f"⚠️ {path} 삭제 실패 또는 파일 없음: {e}")
             
     load_quests()
     normalize_quests()
