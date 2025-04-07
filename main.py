@@ -172,7 +172,6 @@ def build_daily_keyboard(user_id: int):
                 checkmark = "✅" if checked else "☐"
                 btn_text = f"{checkmark} {task_name}"
                 callback_data = f"{game}|{task_name}"
-                print(f"[버튼 생성] game={game}, task={task_name}, callback_data={callback_data}, type={type(task)}")
                 row.append(InlineKeyboardButton(btn_text, callback_data=callback_data))
                 if len(row) == 2:
                     keyboard.append(row)
